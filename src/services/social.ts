@@ -1,4 +1,9 @@
-import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
+import {
+  createClient,
+  type SupportedStorage,
+  type SupabaseClient,
+  type User,
+} from "@supabase/supabase-js";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import {
@@ -119,8 +124,9 @@ const supabaseUrl =
 const supabasePublishableKey =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ||
   PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+const SOCIAL_AUTH_STORAGE_KEY = "aster-launcher-social-auth";
 const SOCIAL_AUTH_COOLDOWN_KEY = "aster-social.auth-cooldown.v1";
-const SOCIAL_AUTH_COOLDOWN_MS = 10 * 60 * 1000;
+const SOCIAL_AUTH_COOLDOWN_MS = 2 * 60 * 1000;
 const PROFILE_SYNC_TTL_MS = 45 * 1000;
 
 export const isSocialConfigured = Boolean(
@@ -186,6 +192,61 @@ export function normalizeSocialSearchQuery(query: string) {
   return query.trim().replace(/[^a-zA-Z0-9_]/g, "").slice(0, 16);
 }
 
+function getBrowserSocialSession(key: string) {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(key);
+}
+
+function setBrowserSocialSession(key: string, value: string | null) {
+  if (typeof window === "undefined") return;
+  if (value === null) {
+    window.localStorage.removeItem(key);
+  } else {
+    window.localStorage.setItem(key, value);
+  }
+}
+
+const socialAuthStorage: SupportedStorage = {
+  async getItem(key) {
+    const browserValue = getBrowserSocialSession(key);
+    if (key !== SOCIAL_AUTH_STORAGE_KEY || !isTauriRuntime()) {
+      return browserValue;
+    }
+    try {
+      const secureValue = await invoke<string | null>(
+        "load_social_auth_session",
+      );
+      if (secureValue) {
+        setBrowserSocialSession(key, secureValue);
+        return secureValue;
+      }
+    } catch {
+      // Existing browser storage remains a safe fallback when DPAPI is unavailable.
+    }
+    return browserValue;
+  },
+  async setItem(key, value) {
+    setBrowserSocialSession(key, value);
+    if (key === SOCIAL_AUTH_STORAGE_KEY && isTauriRuntime()) {
+      try {
+        await invoke("save_social_auth_session", { payload: value });
+      } catch {
+        // Supabase can continue with its persisted browser session.
+      }
+    }
+  },
+  async removeItem(key) {
+    setBrowserSocialSession(key, null);
+    if (key === SOCIAL_AUTH_STORAGE_KEY && isTauriRuntime()) {
+      try {
+        await invoke("clear_social_auth_session");
+      } catch {
+        // Removing the browser copy still signs this installation out.
+      }
+    }
+  },
+};
+
 function getSocialClient() {
   if (!isSocialConfigured || !supabaseUrl || !supabasePublishableKey) {
     throw new Error(
@@ -199,7 +260,8 @@ function getSocialClient() {
         autoRefreshToken: true,
         persistSession: true,
         detectSessionInUrl: false,
-        storageKey: "aster-launcher-social-auth",
+        storageKey: SOCIAL_AUTH_STORAGE_KEY,
+        storage: socialAuthStorage,
       },
     });
   }

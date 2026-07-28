@@ -1,4 +1,4 @@
-const VERSION = "0.5.2";
+const VERSION = "0.5.3";
 const REPOSITORY_URL =
   "https://github.com/asterlauncher/Aster-Launcher";
 const RELEASE_URL = `${REPOSITORY_URL}/releases`;
@@ -498,12 +498,26 @@ function documentPage({ title, subtitle, path, body, action = "" }) {
 function changelog() {
   return documentPage({
     title: `VERSION ${VERSION}`,
-    subtitle: "Social Reliability Hotfix",
+    subtitle: "Secure Social Session Hotfix",
     path: "/changelog",
     action: `<a class="button green" href="/download">DOWNLOAD ${VERSION}</a>`,
     body: `
       <section class="release">
         <div class="release-label">${VERSION}<small>CURRENT</small></div>
+        <div>
+          <h2>SECURE SOCIAL SESSION HOTFIX</h2>
+          <ul>
+            <li>Bestehende Social-Sitzungen werden vor einem neuen anonymen Login wiederhergestellt.</li>
+            <li>Social-Sitzungen bleiben durch verschlüsselte Windows-Speicherung auch nach Updates erhalten.</li>
+            <li>Weniger doppelte Profilabfragen und unnötige Datenbankanfragen.</li>
+            <li>Minecraft-Namen mit Unterstrich funktionieren in der Spielersuche.</li>
+            <li>Online-Spieler werden zuerst angezeigt und Verbindungsfehler können direkt erneut versucht werden.</li>
+          </ul>
+          <p><a href="${RELEASE_URL}" rel="noreferrer">Release auf GitHub ansehen →</a></p>
+        </div>
+      </section>
+      <section class="release">
+        <div class="release-label">0.5.2<small>RELIABILITY</small></div>
         <div>
           <h2>SOCIAL RELIABILITY HOTFIX</h2>
           <ul>
@@ -512,7 +526,6 @@ function changelog() {
             <li>Minecraft-Namen mit Unterstrich funktionieren in der Spielersuche.</li>
             <li>Online-Spieler werden zuerst angezeigt und Verbindungsfehler können direkt erneut versucht werden.</li>
           </ul>
-          <p><a href="${RELEASE_URL}" rel="noreferrer">Release auf GitHub ansehen →</a></p>
         </div>
       </section>
       <section class="release">

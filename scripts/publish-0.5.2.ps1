@@ -1,13 +1,14 @@
 param(
     [switch]$SkipChecks,
-    [switch]$SkipWebsite
+    [switch]$SkipWebsite,
+    [string]$Version = "0.5.2"
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $repository = "asterlauncher/Aster-Launcher"
-$version = "0.5.2"
+$version = $Version
 $tag = "app-v$version"
 $workspace = Split-Path -Parent $PSScriptRoot
 $publishPaths = @(
@@ -16,15 +17,20 @@ $publishPaths = @(
     "docs/SOCIAL_SETUP.md",
     "docs/VERSION_HISTORY.md",
     "docs/releases/0.5.2.md",
+    "docs/releases/$version.md",
     "package-lock.json",
     "package.json",
     "scripts/create-update-manifest.mjs",
     "scripts/publish-0.5.1.ps1",
     "scripts/publish-0.5.2.ps1",
+    "scripts/publish-$version.ps1",
     "scripts/publish-website.ps1",
     "scripts/repair-0.5.1-update.ps1",
     "src-tauri/Cargo.lock",
     "src-tauri/Cargo.toml",
+    "src-tauri/src/auth/token_store.rs",
+    "src-tauri/src/commands/social_commands.rs",
+    "src-tauri/src/lib.rs",
     "src-tauri/tauri.conf.json",
     "src/components/FriendsHub.tsx",
     "src/hooks/useLauncherUpdater.ts",
@@ -144,7 +150,7 @@ if (
     -not (Test-Path (Join-Path $defaultExecPath "git-remote-https.exe")) -and
     (Test-Path (Join-Path $bundledNetworkDirectory "git-remote-https.exe"))
 ) {
-    $temporaryGitExecPath = Join-Path $env:TEMP "aster-git-exec-0.5.2"
+    $temporaryGitExecPath = Join-Path $env:TEMP "aster-git-exec-$version"
     New-Item -ItemType Directory -Path $temporaryGitExecPath -Force | Out-Null
     Copy-Item -Path (Join-Path $defaultExecPath "*") `
         -Destination $temporaryGitExecPath -Recurse -Force
@@ -241,7 +247,7 @@ Invoke-Checked -Program $git -Arguments (@("add", "--") + $publishPaths)
 
 $staged = @(& $git diff --cached --name-only)
 if ($LASTEXITCODE -ne 0 -or -not $staged) {
-    throw "No 0.5.2 changes are staged."
+    throw "No $version changes are staged."
 }
 
 $unexpected = $staged | Where-Object { $publishPaths -notcontains $_ }
@@ -269,7 +275,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Invoke-Checked -Program $git -Arguments @(
-    "commit", "-m", "Publish Aster Launcher 0.5.2 social reliability hotfix"
+    "commit", "-m", "Publish Aster Launcher $version secure social session hotfix"
 )
 $commitSha = (& $git rev-parse HEAD).Trim()
 
@@ -297,7 +303,7 @@ for ($attempt = 0; $attempt -lt 18 -and -not $runId; $attempt++) {
         --jq ".[0].databaseId").Trim()
 }
 if (-not $runId) {
-    throw "The 0.5.2 release workflow did not start."
+    throw "The $version release workflow did not start."
 }
 
 Invoke-Checked -Program $gh -Arguments @(
@@ -353,6 +359,6 @@ if ($temporaryGitExecPath -and (Test-Path -LiteralPath $temporaryGitExecPath)) {
 }
 
 Write-Host ""
-Write-Host "Aster Launcher 0.5.2 is public and update-ready." -ForegroundColor Green
+Write-Host "Aster Launcher $version is public and update-ready." -ForegroundColor Green
 Write-Host "Release: https://github.com/$repository/releases/tag/$tag"
 Write-Host "Website: https://aster-launcher.asterlauncher.workers.dev/"

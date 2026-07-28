@@ -35,7 +35,7 @@ type NativeDownloadEvent =
   | { event: "Progress"; data: { chunkLength: number } }
   | { event: "Finished" };
 
-const FALLBACK_VERSION = "0.5.2";
+const FALLBACK_VERSION = "0.5.3";
 const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const MANUAL_DOWNLOAD_URL =
   "https://github.com/asterlauncher/Aster-Launcher/releases";

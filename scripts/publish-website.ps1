@@ -35,9 +35,9 @@ if ($LASTEXITCODE -ne 0) {
     Invoke-Checked -Program "npx.cmd" -Arguments @("--yes", "wrangler", "login")
 }
 
-Write-Host "Publishing Aster Launcher website 0.5.2..." -ForegroundColor Cyan
+Write-Host "Publishing Aster Launcher website 0.5.3..." -ForegroundColor Cyan
 Invoke-Checked -Program "npx.cmd" -Arguments @("--yes", "wrangler", "deploy")
 
 Write-Host ""
-Write-Host "Aster Launcher website 0.5.2 is live." -ForegroundColor Green
+Write-Host "Aster Launcher website 0.5.3 is live." -ForegroundColor Green
 Write-Host "https://aster-launcher.asterlauncher.workers.dev/"

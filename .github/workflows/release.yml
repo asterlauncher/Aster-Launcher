@@ -7,7 +7,7 @@ on:
     branches:
       - main
     paths:
-      - "docs/releases/0.5.2.md"
+      - "docs/releases/0.5.3.md"
   workflow_dispatch:
 
 permissions:
@@ -46,12 +46,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: app-v0.5.2
-          releaseName: "Aster Launcher v0.5.2"
+          tagName: app-v0.5.3
+          releaseName: "Aster Launcher v0.5.3"
           releaseBody: |
-            # Aster Launcher 0.5.2 — Social Reliability Hotfix
+            # Aster Launcher 0.5.3 — Secure Social Session Hotfix
 
             - Existing Social sessions are restored before anonymous sign-in cooldowns
+            - Social refresh tokens are backed up with Windows DPAPI across launcher updates
             - Duplicate profile heartbeats and database requests are reduced
             - Minecraft names containing underscores work in player search
             - Player search uses a safe online-first database function

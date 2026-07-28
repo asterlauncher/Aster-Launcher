@@ -3,7 +3,7 @@ import site from "../worker/index.js";
 
 const pages = [
   ["/", "EVERYTHING YOU NEED."],
-  ["/changelog", "Social Reliability"],
+  ["/changelog", "Secure Social Session"],
   ["/privacy", "Datenschutzhinweise"],
   ["/legal", "asterlauncher@gmail.com"],
 ];
@@ -30,6 +30,8 @@ const changelog = await site.fetch(
   new Request("https://aster.test/changelog"),
 );
 const changelogHtml = await changelog.text();
+assert.match(changelogHtml, /0\.5\.3/);
+assert.match(changelogHtml, /SECURE SOCIAL SESSION HOTFIX/);
 assert.match(changelogHtml, /0\.5\.2/);
 assert.match(changelogHtml, /SOCIAL RELIABILITY HOTFIX/);
 assert.match(changelogHtml, /0\.5\.1/);
@@ -47,12 +49,12 @@ globalThis.fetch = async (input) => {
   if (url.startsWith("https://api.github.com/")) {
     return Response.json([
       {
-        tag_name: "app-v0.5.2",
+        tag_name: "app-v0.5.3",
         assets: [
           {
-            name: "Aster Launcher_0.5.2_x64-setup.exe",
+            name: "Aster Launcher_0.5.3_x64-setup.exe",
             browser_download_url:
-              "https://github.com/asterlauncher/Aster-Launcher/releases/download/app-v0.5.2/Aster.Launcher_0.5.2_x64-setup.exe",
+              "https://github.com/asterlauncher/Aster-Launcher/releases/download/app-v0.5.3/Aster.Launcher_0.5.3_x64-setup.exe",
           },
         ],
       },

@@ -1,12 +1,20 @@
 use std::path::{Path, PathBuf};
 
 use reqwest::{header, Client, Url};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use uuid::Uuid;
 
 const MAX_SCREENSHOT_BYTES: u64 = 12 * 1024 * 1024;
 const MAX_MODPACK_BYTES: u64 = 250 * 1024 * 1024;
+const MAX_SOCIAL_SESSION_BYTES: usize = 64 * 1024;
+const SOCIAL_SESSION_FILE: &str = ".social-session.bin";
+
+#[derive(Debug, Deserialize)]
+struct StoredSocialSession {
+    access_token: String,
+    refresh_token: String,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -14,6 +22,99 @@ pub struct UploadedChatAttachment {
     file_name: String,
     mime_type: String,
     size: u64,
+}
+
+fn social_session_path(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_data_dir()
+        .map(|directory| directory.join(SOCIAL_SESSION_FILE))
+        .map_err(|_| "Windows secure Social storage is unavailable.".to_owned())
+}
+
+fn validate_social_session(payload: &str) -> Result<(), String> {
+    if payload.is_empty() || payload.len() > MAX_SOCIAL_SESSION_BYTES {
+        return Err("The Social session payload is invalid.".to_owned());
+    }
+    let session: StoredSocialSession = serde_json::from_str(payload)
+        .map_err(|_| "The Social session payload is invalid.".to_owned())?;
+    if session.access_token.trim().is_empty() || session.refresh_token.trim().is_empty() {
+        return Err("The Social session payload is incomplete.".to_owned());
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn load_social_session_file(path: &Path) -> Result<Option<String>, String> {
+    let encrypted = match std::fs::read(path) {
+        Ok(payload) => payload,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err("The saved Social session could not be read.".to_owned()),
+    };
+    let decrypted = crate::auth::token_store::windows_dpapi::decrypt(&encrypted)
+        .map_err(|_| "The saved Social session could not be decrypted.".to_owned())?;
+    let payload = String::from_utf8(decrypted)
+        .map_err(|_| "The saved Social session is invalid.".to_owned())?;
+    validate_social_session(&payload)?;
+    Ok(Some(payload))
+}
+
+#[cfg(not(windows))]
+fn load_social_session_file(_path: &Path) -> Result<Option<String>, String> {
+    Ok(None)
+}
+
+#[cfg(windows)]
+fn save_social_session_file(path: &Path, payload: &str) -> Result<(), String> {
+    validate_social_session(payload)?;
+    let encrypted = crate::auth::token_store::windows_dpapi::encrypt(payload.as_bytes())
+        .map_err(|_| "The Social session could not be encrypted.".to_owned())?;
+    let parent = path
+        .parent()
+        .ok_or_else(|| "The Social session path is invalid.".to_owned())?;
+    std::fs::create_dir_all(parent)
+        .map_err(|_| "The Social session folder could not be created.".to_owned())?;
+    let temporary = path.with_extension("bin.new");
+    std::fs::write(&temporary, encrypted)
+        .map_err(|_| "The Social session could not be saved.".to_owned())?;
+    if path.exists() {
+        std::fs::remove_file(path)
+            .map_err(|_| "The previous Social session could not be replaced.".to_owned())?;
+    }
+    std::fs::rename(temporary, path)
+        .map_err(|_| "The Social session could not be finalized.".to_owned())
+}
+
+#[cfg(not(windows))]
+fn save_social_session_file(_path: &Path, _payload: &str) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn load_social_auth_session(app: AppHandle) -> Result<Option<String>, String> {
+    let path = social_session_path(&app)?;
+    tokio::task::spawn_blocking(move || load_social_session_file(&path))
+        .await
+        .map_err(|_| "The Social session could not be loaded.".to_owned())?
+}
+
+#[tauri::command]
+pub async fn save_social_auth_session(app: AppHandle, payload: String) -> Result<(), String> {
+    let path = social_session_path(&app)?;
+    tokio::task::spawn_blocking(move || save_social_session_file(&path, &payload))
+        .await
+        .map_err(|_| "The Social session could not be saved.".to_owned())?
+}
+
+#[tauri::command]
+pub async fn clear_social_auth_session(app: AppHandle) -> Result<(), String> {
+    let path = social_session_path(&app)?;
+    tokio::task::spawn_blocking(move || match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("The saved Social session could not be removed.".to_owned()),
+    })
+    .await
+    .map_err(|_| "The Social session could not be removed.".to_owned())?
 }
 
 fn allowed_attachment(path: &Path, kind: &str) -> Result<(String, u64), String> {
@@ -256,4 +357,36 @@ pub async fn remove_cached_chat_attachment(
             .map_err(|_| "The cached chat attachment could not be removed.".to_owned())?;
     }
     Ok(())
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::{load_social_session_file, save_social_session_file};
+
+    #[test]
+    fn social_session_round_trips_through_windows_dpapi() {
+        let directory =
+            std::env::temp_dir().join(format!("aster-social-test-{}", uuid::Uuid::new_v4()));
+        let path = directory.join(".social-session.bin");
+        let payload = serde_json::json!({
+            "access_token": "private-social-access-token",
+            "refresh_token": "private-social-refresh-token",
+            "expires_at": 4_000_000_000_u64,
+            "token_type": "bearer"
+        })
+        .to_string();
+
+        save_social_session_file(&path, &payload).expect("save encrypted social session");
+        let encrypted = std::fs::read(&path).expect("read encrypted social session");
+        assert!(!encrypted
+            .windows("private-social-access-token".len())
+            .any(|window| window == b"private-social-access-token"));
+
+        let restored = load_social_session_file(&path)
+            .expect("load encrypted social session")
+            .expect("stored social session");
+        assert_eq!(restored, payload);
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
 }

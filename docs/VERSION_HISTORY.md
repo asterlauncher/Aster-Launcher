@@ -1,8 +1,16 @@
 # Aster Launcher version history
 
+## 0.5.3 — Secure Social Session Hotfix
+
+- Added Windows DPAPI backup storage for Social refresh sessions.
+- Preserved the same Social identity across installer updates.
+- Reduced the anonymous sign-in cooldown to match the server token bucket.
+- Retained the 0.5.2 player-search, request-caching, and retry improvements.
+
 ## 0.5.2 — Social Reliability Hotfix
 
 - Fixed Social sessions being blocked by a previous anonymous sign-in cooldown.
+- Added encrypted Windows storage for Social sessions across launcher updates.
 - Reduced unnecessary profile synchronization requests.
 - Fixed searches for Minecraft names containing underscores.
 - Added safe online-first player search and stale empty-profile recovery.

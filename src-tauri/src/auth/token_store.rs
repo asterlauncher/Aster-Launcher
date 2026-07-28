@@ -115,7 +115,7 @@ fn clear_accounts(_encrypted_path: PathBuf) -> Result<(), AuthError> {
 }
 
 #[cfg(windows)]
-mod windows_dpapi {
+pub(crate) mod windows_dpapi {
     use std::{ptr, slice};
 
     use windows_sys::Win32::{
@@ -165,7 +165,7 @@ mod windows_dpapi {
         })
     }
 
-    pub fn encrypt(payload: &[u8]) -> Result<Vec<u8>, AuthError> {
+    pub(crate) fn encrypt(payload: &[u8]) -> Result<Vec<u8>, AuthError> {
         let input = input_blob(payload)?;
         let entropy = input_blob(ASTER_ENTROPY)?;
         let mut output = LocalBlob(CRYPT_INTEGER_BLOB::default());
@@ -186,7 +186,7 @@ mod windows_dpapi {
         output.into_bytes()
     }
 
-    pub fn decrypt(payload: &[u8]) -> Result<Vec<u8>, AuthError> {
+    pub(crate) fn decrypt(payload: &[u8]) -> Result<Vec<u8>, AuthError> {
         let input = input_blob(payload)?;
         let entropy = input_blob(ASTER_ENTROPY)?;
         let mut output = LocalBlob(CRYPT_INTEGER_BLOB::default());

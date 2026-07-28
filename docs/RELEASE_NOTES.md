@@ -1,8 +1,10 @@
-# Aster Launcher 0.5.2 - Social Reliability Hotfix
+# Aster Launcher 0.5.3 - Secure Social Session Hotfix
 
-Version 0.5.2 repairs the Aster Social connection flow for local testing.
+Version 0.5.3 makes the repaired Aster Social connection flow available as an
+immutable public patch release.
 
 - Existing valid Social sessions are restored before anonymous sign-in cooldowns are checked.
+- Social sessions are encrypted with Windows DPAPI so launcher updates cannot lose them.
 - Duplicate profile heartbeats and database requests are reduced.
 - Minecraft usernames containing underscores can be searched correctly.
 - Player search now uses a safe database function with online-first results.
@@ -10,6 +12,14 @@ Version 0.5.2 repairs the Aster Social connection flow for local testing.
 - The Friends page now offers an in-place Retry action after connection errors.
 
 Run the updated `supabase/social.sql` migration once in the Supabase SQL editor before testing.
+
+## Previous release
+
+# Aster Launcher 0.5.2 - Social Reliability Hotfix
+
+Version 0.5.2 introduced safer player search, reduced duplicate Social
+requests, and added in-place retry handling. Version 0.5.3 supersedes it with
+update-safe encrypted session persistence.
 
 ## Previous release
 
