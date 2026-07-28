@@ -1,0 +1,36 @@
+{
+  "name": "aster-launcher",
+  "private": true,
+  "version": "0.4.8",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build --configLoader runner",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "store:msix": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-store-msix.ps1",
+    "test": "vitest run --configLoader runner"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.110.8",
+    "@tauri-apps/api": "^2.8.0",
+    "@tauri-apps/plugin-dialog": "^2.7.2",
+    "framer-motion": "^12.23.12",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "simple-icons": "^16.21.0",
+    "skinview3d": "^3.4.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.11",
+    "@tauri-apps/cli": "^2.8.4",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@vitejs/plugin-react": "^4.7.0",
+    "tailwindcss": "^4.1.11",
+    "typescript": "~5.8.3",
+    "vite": "^7.1.7",
+    "vitest": "^3.2.4"
+  }
+}

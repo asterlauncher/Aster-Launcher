@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="AsterLauncher.AsterLauncher"
+    Publisher="CN=C299727D-7324-4B0C-A9D1-E1E71AA1D889"
+    Version="__PACKAGE_VERSION__"
+    ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>Aster Launcher</DisplayName>
+    <PublisherDisplayName>Aster Launcher</PublisherDisplayName>
+    <Description>Aster Launcher for Minecraft: Java Edition</Description>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily
+      Name="Windows.Desktop"
+      MinVersion="10.0.17763.0"
+      MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application
+      Id="AsterLauncher"
+      Executable="aster-launcher.exe"
+      EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        AppListEntry="default"
+        DisplayName="Aster Launcher"
+        Description="Aster Launcher for Minecraft: Java Edition"
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <Capability Name="internetClient" />
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

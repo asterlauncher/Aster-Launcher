@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Aster Launcher",
+  "version": "0.4.8",
+  "identifier": "dev.aster.launcher",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Aster Launcher",
+        "width": 1180,
+        "height": 720,
+        "minWidth": 1000,
+        "minHeight": 620,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": false,
+        "transparent": false
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPLOCALDATA/skins/**", "$APPLOCALDATA/instances/**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/icon.ico"
+    ]
+  }
+}

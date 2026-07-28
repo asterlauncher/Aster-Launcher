@@ -1,0 +1,65 @@
+name: Publish Aster Launcher update
+
+on:
+  push:
+    tags:
+      - "app-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm test
+
+      - name: Publish signed Windows update
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: app-v__VERSION__
+          releaseName: "Aster Launcher v__VERSION__"
+          releaseBody: |
+            # Aster Update
+
+            A new closed-alpha launcher build is available with improvements, fixes, and polish.
+          generateReleaseNotes: true
+          releaseDraft: false
+          prerelease: false
+
+      - name: Create signed update manifest
+        shell: pwsh
+        env:
+          ASTER_UPDATE_PRIVATE_KEY: ${{ secrets.ASTER_UPDATE_PRIVATE_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if (-not $installer) { throw "NSIS installer was not produced." }
+          node scripts/create-update-manifest.mjs $installer.FullName aster-update.json
+          gh release upload "app-v$version" aster-update.json --clobber

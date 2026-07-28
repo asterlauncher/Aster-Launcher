@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default launcher window permissions","local":true,"windows":["main"],"permissions":["core:default","core:event:allow-listen","core:window:allow-start-dragging","core:window:allow-toggle-maximize","dialog:allow-open","dialog:allow-save"]}}

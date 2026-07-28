@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Aster Launcher">
+  <circle cx="128" cy="128" r="110" fill="#111014" stroke="#f7f7f7" stroke-width="12"/>
+  <path fill="#f7f7f7" d="m128 57 18 53 53 18-53 18-18 53-18-53-53-18 53-18 18-53Z"/>
+</svg>
