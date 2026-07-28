@@ -136,9 +136,35 @@ if ($originExists) {
 }
 
 Invoke-Git branch -M main
-Invoke-Git commit -m "Publish Aster Launcher 0.4.8 closed alpha"
+$hasStagedChanges = $true
+& $gitPath diff --cached --quiet
+if ($LASTEXITCODE -eq 0) {
+    $hasStagedChanges = $false
+} elseif ($LASTEXITCODE -ne 1) {
+    throw "Could not inspect staged Git changes."
+}
+if ($hasStagedChanges) {
+    Invoke-Git commit -m "Publish Aster Launcher 0.4.8 closed alpha"
+}
+
+Invoke-Git fetch origin main
+& $gitPath merge-base HEAD origin/main *> $null
+if ($LASTEXITCODE -ne 0) {
+    Invoke-Git merge `
+        --allow-unrelated-histories `
+        --strategy ours `
+        origin/main `
+        -m "Merge existing Aster Launcher repository history"
+} else {
+    Invoke-Git merge origin/main
+}
+
 Invoke-Git push -u origin main
-Invoke-Git tag -a $tag -m "Aster Launcher $version closed alpha"
+
+& $gitPath rev-parse --verify --quiet "refs/tags/$tag" *> $null
+if ($LASTEXITCODE -ne 0) {
+    Invoke-Git tag -a $tag -m "Aster Launcher $version closed alpha"
+}
 Invoke-Git push origin $tag
 
 Write-Host ""
