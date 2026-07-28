@@ -387,6 +387,18 @@ pub fn open_instance_folder(app: AppHandle, instance_id: String) -> Result<(), S
 }
 
 #[tauri::command]
+pub fn open_launcher_data_folder(app: AppHandle) -> Result<(), String> {
+    let directory = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "The launcher data folder is unavailable.".to_owned())?;
+    std::fs::create_dir_all(&directory)
+        .map_err(|_| "The launcher data folder could not be created.".to_owned())?;
+    open::that_detached(directory)
+        .map_err(|_| "The launcher data folder could not be opened.".to_owned())
+}
+
+#[tauri::command]
 pub fn open_instance_content_folder(
     app: AppHandle,
     instance_id: String,
@@ -654,7 +666,7 @@ pub async fn download_instance_content(
 
     emit_download_progress(&app, &download_id, 2, "Connecting to provider", None, None);
     let mut response = reqwest::Client::builder()
-        .user_agent("AsterLauncher/0.1.0")
+        .user_agent("AsterLauncher/0.5.0")
         .build()
         .map_err(|_| "The download client could not be prepared.".to_owned())?
         .get(url)

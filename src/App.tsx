@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ModalSystem } from "./components/ModalSystem";
 import { ToastViewport } from "./components/Notifications";
 import { Sidebar } from "./components/Sidebar";
+import { SocialNotificationBridge } from "./components/SocialNotificationBridge";
 import { TopBar } from "./components/TopBar";
 import { HomePage } from "./pages/HomePage";
 import { MyModpacksPage } from "./pages/MyModpacksPage";
@@ -44,6 +45,7 @@ export default function App() {
       </div>
       <ModalSystem />
       <ToastViewport />
+      <SocialNotificationBridge />
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getLauncherSettings } from "./settings";
 
 export interface LaunchStarted {
   pid: number;
@@ -20,10 +21,12 @@ export function launchInstance(
   gameVersion: string,
   loader: string,
 ) {
+  const { memoryGb } = getLauncherSettings();
   return invoke<LaunchStarted>("launch_instance", {
     instanceId,
     gameVersion,
     loader,
+    memoryGb,
   });
 }
 

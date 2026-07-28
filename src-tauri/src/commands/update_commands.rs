@@ -7,7 +7,12 @@ use std::path::{Path, PathBuf};
 use tauri::{ipc::Channel, AppHandle};
 use tokio::io::AsyncWriteExt;
 
-const UPDATE_MANIFEST_URL: &str = "https://github.com/asterlauncher/Aster-Launcher/releases/latest/download/aster-update.json";
+const GITHUB_LATEST_RELEASE_API: &str =
+    "https://api.github.com/repos/asterlauncher/Aster-Launcher/releases/latest";
+const LEGACY_UPDATE_MANIFEST_URL: &str =
+    "https://github.com/asterlauncher/Aster-Launcher/releases/latest/download/aster-update.json";
+const RELEASES_PAGE_URL: &str = "https://github.com/asterlauncher/Aster-Launcher/releases";
+const UPDATE_MANIFEST_ASSET: &str = "aster-update.json";
 const UPDATE_PUBLIC_KEY: &str = "mRKRFNcmFw2xTxU8n7NFYJ1LtE+Jjau0HgS+NAwZyck=";
 const MAX_UPDATE_BYTES: u64 = 300 * 1024 * 1024;
 
@@ -15,8 +20,7 @@ const MAX_UPDATE_BYTES: u64 = 300 * 1024 * 1024;
 fn is_store_package() -> bool {
     use std::ptr::null_mut;
     use windows_sys::Win32::{
-        Foundation::ERROR_INSUFFICIENT_BUFFER,
-        Storage::Packaging::Appx::GetCurrentPackageFullName,
+        Foundation::ERROR_INSUFFICIENT_BUFFER, Storage::Packaging::Appx::GetCurrentPackageFullName,
     };
 
     let mut package_name_length = 0_u32;
@@ -40,6 +44,20 @@ pub struct LauncherUpdateManifest {
     url: String,
     sha256: String,
     signature: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct GithubReleaseAsset {
+    name: String,
+    browser_download_url: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+    draft: bool,
+    prerelease: bool,
+    assets: Vec<GithubReleaseAsset>,
 }
 
 #[derive(Clone, Serialize)]
@@ -109,6 +127,88 @@ fn verify_update(update: &LauncherUpdateManifest) -> Result<(), String> {
     Ok(())
 }
 
+fn update_manifest_asset_url(release: &GithubRelease) -> Result<String, String> {
+    if release.draft || release.prerelease {
+        return Err("The latest launcher release is not publicly available.".to_owned());
+    }
+    if !release.tag_name.starts_with("app-v") {
+        return Err("The latest launcher release has an invalid tag.".to_owned());
+    }
+
+    release
+        .assets
+        .iter()
+        .find(|asset| asset.name == UPDATE_MANIFEST_ASSET)
+        .map(|asset| asset.browser_download_url.clone())
+        .ok_or_else(|| "The latest launcher release has no update manifest.".to_owned())
+}
+
+async fn fetch_update_manifest_url(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<LauncherUpdateManifest, String> {
+    let response = client
+        .get(url)
+        .header("Accept", "application/json")
+        .header("Cache-Control", "no-cache")
+        .send()
+        .await
+        .map_err(|_| "The update manifest could not be reached.".to_owned())?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "The update manifest returned status {}.",
+            response.status().as_u16()
+        ));
+    }
+
+    response
+        .json::<LauncherUpdateManifest>()
+        .await
+        .map_err(|_| "The update manifest contains invalid data.".to_owned())
+}
+
+async fn fetch_update_manifest_from_github(
+    client: &reqwest::Client,
+) -> Result<LauncherUpdateManifest, String> {
+    let response = client
+        .get(GITHUB_LATEST_RELEASE_API)
+        .header("Accept", "application/vnd.github+json")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header("Cache-Control", "no-cache")
+        .send()
+        .await
+        .map_err(|_| "GitHub's release service could not be reached.".to_owned())?;
+
+    if !response.status().is_success() {
+        return Err(format!(
+            "GitHub's release service returned status {}.",
+            response.status().as_u16()
+        ));
+    }
+
+    let release = response
+        .json::<GithubRelease>()
+        .await
+        .map_err(|_| "GitHub returned invalid release information.".to_owned())?;
+    let manifest_url = update_manifest_asset_url(&release)?;
+    fetch_update_manifest_url(client, &manifest_url).await
+}
+
+async fn fetch_update_manifest(client: &reqwest::Client) -> Result<LauncherUpdateManifest, String> {
+    match fetch_update_manifest_from_github(client).await {
+        Ok(update) => Ok(update),
+        Err(primary_error) => {
+            match fetch_update_manifest_url(client, LEGACY_UPDATE_MANIFEST_URL).await {
+                Ok(update) => Ok(update),
+                Err(fallback_error) => Err(format!(
+                    "Update check failed: {primary_error} Fallback: {fallback_error}"
+                )),
+            }
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn check_launcher_update(
     app: AppHandle,
@@ -119,28 +219,15 @@ pub async fn check_launcher_update(
         return Ok(None);
     }
 
-    let response = reqwest::Client::new()
-        .get(UPDATE_MANIFEST_URL)
-        .header("User-Agent", "AsterLauncher-Updater")
+    let client = reqwest::Client::builder()
+        .user_agent(format!(
+            "AsterLauncher-Updater/{}",
+            app.package_info().version
+        ))
         .timeout(std::time::Duration::from_secs(20))
-        .send()
-        .await
-        .map_err(|_| "The launcher could not reach the update service.".to_owned())?;
-
-    if response.status() == reqwest::StatusCode::NOT_FOUND {
-        return Ok(None);
-    }
-    if !response.status().is_success() {
-        return Err(format!(
-            "The update service returned status {}.",
-            response.status().as_u16()
-        ));
-    }
-
-    let update = response
-        .json::<LauncherUpdateManifest>()
-        .await
-        .map_err(|_| "The update information could not be read.".to_owned())?;
+        .build()
+        .map_err(|_| "The update service could not be initialized.".to_owned())?;
+    let update = fetch_update_manifest(&client).await?;
     verify_update(&update)?;
 
     let current = app.package_info().version.clone();
@@ -152,6 +239,12 @@ pub async fn check_launcher_update(
     } else {
         Ok(None)
     }
+}
+
+#[tauri::command]
+pub fn open_launcher_downloads() -> Result<(), String> {
+    open::that_detached(RELEASES_PAGE_URL)
+        .map_err(|_| "The launcher download page could not be opened.".to_owned())
 }
 
 fn update_file_path(version: &str) -> PathBuf {
@@ -324,7 +417,10 @@ pub fn install_launcher_update(app: AppHandle, installer_path: String) -> Result
 
 #[cfg(test)]
 mod tests {
-    use super::{canonical_payload, update_file_path, verify_update, LauncherUpdateManifest};
+    use super::{
+        canonical_payload, update_file_path, update_manifest_asset_url, verify_update,
+        GithubRelease, GithubReleaseAsset, LauncherUpdateManifest,
+    };
 
     fn example_update() -> LauncherUpdateManifest {
         LauncherUpdateManifest {
@@ -357,5 +453,43 @@ mod tests {
     #[test]
     fn accepts_manifest_signed_by_the_embedded_public_key() {
         assert!(verify_update(&example_update()).is_ok());
+    }
+
+    fn example_release(assets: Vec<GithubReleaseAsset>) -> GithubRelease {
+        GithubRelease {
+            tag_name: "app-v0.4.9".to_owned(),
+            draft: false,
+            prerelease: false,
+            assets,
+        }
+    }
+
+    #[test]
+    fn selects_the_exact_update_manifest_asset() {
+        let release = example_release(vec![
+            GithubReleaseAsset {
+                name: "aster-update-0.4.9.json".to_owned(),
+                browser_download_url: "https://example.invalid/wrong".to_owned(),
+            },
+            GithubReleaseAsset {
+                name: "aster-update.json".to_owned(),
+                browser_download_url: "https://example.invalid/correct".to_owned(),
+            },
+        ]);
+
+        assert_eq!(
+            update_manifest_asset_url(&release).as_deref(),
+            Ok("https://example.invalid/correct")
+        );
+    }
+
+    #[test]
+    fn rejects_a_release_without_the_stable_manifest_name() {
+        let release = example_release(vec![GithubReleaseAsset {
+            name: "aster-update-0.4.9.json".to_owned(),
+            browser_download_url: "https://example.invalid/wrong".to_owned(),
+        }]);
+
+        assert!(update_manifest_asset_url(&release).is_err());
     }
 }

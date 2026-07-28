@@ -96,7 +96,7 @@ export async function sendPresenceHeartbeat(): Promise<PresenceSnapshot> {
   try {
     const { data, error } = await client.rpc("launcher_presence_heartbeat", {
       p_client_id: getPresenceClientId(),
-      p_launcher_version: "0.1.0",
+      p_launcher_version: "0.5.0",
     });
 
     if (error) throw error;

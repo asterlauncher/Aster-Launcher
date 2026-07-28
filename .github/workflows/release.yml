@@ -45,9 +45,15 @@ jobs:
           tagName: app-v__VERSION__
           releaseName: "Aster Launcher v__VERSION__"
           releaseBody: |
-            # Aster Update
+            # Aster Launcher 0.5.0 — Aster Social
 
-            A new closed-alpha launcher build is available with improvements, fixes, and polish.
+            - Minecraft-name friend search and requests
+            - Private conversations with screenshot and modpack sharing
+            - Redesigned notifications and Settings control center
+            - Configurable Minecraft memory
+            - Improved signed update recovery
+
+            This is a closed-alpha build for public testing. Minecraft: Java Edition must be owned separately.
           generateReleaseNotes: true
           releaseDraft: false
           prerelease: false

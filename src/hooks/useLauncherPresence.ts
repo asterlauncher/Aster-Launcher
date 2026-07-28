@@ -5,6 +5,7 @@ import {
   sendPresenceHeartbeat,
   type PresenceSnapshot,
 } from "../services/presence";
+import { useLauncherSettings } from "./useLauncherSettings";
 
 const heartbeatIntervalMs = 30_000;
 
@@ -23,11 +24,23 @@ const initialSnapshot: PresenceSnapshot = isPresenceConfigured
     };
 
 export function useLauncherPresence() {
+  const settings = useLauncherSettings();
   const [snapshot, setSnapshot] = useState<PresenceSnapshot>(initialSnapshot);
   const [refreshing, setRefreshing] = useState(false);
   const mounted = useRef(true);
 
   const refresh = useCallback(async () => {
+    if (!settings.onlinePresence) {
+      setRefreshing(false);
+      const disabledSnapshot: PresenceSnapshot = {
+        onlineCount: null,
+        status: "offline",
+        updatedAt: null,
+        message: "Online presence is disabled in Settings.",
+      };
+      setSnapshot(disabledSnapshot);
+      return disabledSnapshot;
+    }
     setRefreshing(true);
     const nextSnapshot = await sendPresenceHeartbeat();
     if (mounted.current) {
@@ -35,10 +48,16 @@ export function useLauncherPresence() {
       setRefreshing(false);
     }
     return nextSnapshot;
-  }, []);
+  }, [settings.onlinePresence]);
 
   useEffect(() => {
     mounted.current = true;
+    if (!settings.onlinePresence) {
+      void leaveLauncherPresence();
+      void refresh();
+      return;
+    }
+
     void refresh();
 
     const heartbeat = window.setInterval(() => {
@@ -54,7 +73,7 @@ export function useLauncherPresence() {
       window.removeEventListener("online", reconnect);
       void leaveLauncherPresence();
     };
-  }, [refresh]);
+  }, [refresh, settings.onlinePresence]);
 
   return {
     ...snapshot,

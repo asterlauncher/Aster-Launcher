@@ -244,7 +244,7 @@ fn trusted_download_url(value: &str) -> Result<url::Url, String> {
 
 fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent("AsterLauncher/0.1.0")
+        .user_agent("AsterLauncher/0.5.0")
         .build()
         .map_err(|_| "The download client could not be prepared.".to_owned())
 }

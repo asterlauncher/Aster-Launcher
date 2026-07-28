@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { useAppStore } from "../store/AppStore";
 import { AsterCreditIcon } from "./AsterCreditIcon";
+import { FriendsHub } from "./FriendsHub";
 import { Button } from "./ui";
 
 export function ModalSystem() {
@@ -55,7 +56,7 @@ export function ModalSystem() {
           <motion.div
             className={`modal ${
               modal === "aster-subscription" ? "subscription-modal" : ""
-            }`}
+            } ${modal === "friends" ? "friends-modal" : ""}`}
             role="dialog"
             aria-modal="true"
             initial={{ opacity: 0, scale: 0.96, y: 12 }}
@@ -71,6 +72,8 @@ export function ModalSystem() {
             >
               <X size={17} />
             </button>
+
+            {modal === "friends" && <FriendsHub />}
 
             {modal === "aster-subscription" && (
               <>

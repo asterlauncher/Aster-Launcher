@@ -1,6 +1,7 @@
 import { getVersion } from "@tauri-apps/api/app";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLauncherSettings } from "./useLauncherSettings";
 
 export type LauncherUpdaterStatus =
   | "idle"
@@ -34,8 +35,10 @@ type NativeDownloadEvent =
   | { event: "Progress"; data: { chunkLength: number } }
   | { event: "Finished" };
 
-const FALLBACK_VERSION = "0.1.0";
+const FALLBACK_VERSION = "0.5.0";
 const CHECK_INTERVAL_MS = 15 * 60 * 1000;
+const MANUAL_DOWNLOAD_URL =
+  "https://github.com/asterlauncher/Aster-Launcher/releases";
 
 function isTauriRuntime() {
   return (
@@ -108,6 +111,7 @@ function getMockUpdate(currentVersion: string): LauncherUpdateInfo | null {
 }
 
 export function useLauncherUpdater() {
+  const settings = useLauncherSettings();
   const pendingUpdate = useRef<NativeLauncherUpdate | null>(null);
   const checkingRef = useRef(false);
   const statusRef = useRef<LauncherUpdaterStatus>("idle");
@@ -246,11 +250,33 @@ export function useLauncherUpdater() {
     }
   }, [currentVersion]);
 
+  const openManualDownload = useCallback(async () => {
+    try {
+      if (isTauriRuntime()) {
+        await invoke("open_launcher_downloads");
+        return;
+      }
+
+      window.open(MANUAL_DOWNLOAD_URL, "_blank", "noopener,noreferrer");
+    } catch (reason) {
+      setError(
+        getErrorMessage(reason, "The launcher download page could not be opened."),
+      );
+      setStatus("error");
+    }
+  }, []);
+
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
 
   useEffect(() => {
+    if (!settings.automaticUpdateChecks) {
+      if (isTauriRuntime()) {
+        void getVersion().then(setCurrentVersion).catch(() => undefined);
+      }
+      return;
+    }
     void checkForUpdates(false);
 
     const interval = window.setInterval(() => {
@@ -268,7 +294,7 @@ export function useLauncherUpdater() {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", checkWhenVisible);
     };
-  }, [checkForUpdates]);
+  }, [checkForUpdates, settings.automaticUpdateChecks]);
 
   return {
     status,
@@ -280,5 +306,6 @@ export function useLauncherUpdater() {
     error,
     checkForUpdates,
     installUpdate,
+    openManualDownload,
   };
 }

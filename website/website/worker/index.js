@@ -1,4 +1,4 @@
-const VERSION = "0.4.8";
+const VERSION = "0.5.0";
 const REPOSITORY_URL =
   "https://github.com/asterlauncher/Aster-Launcher";
 const RELEASE_URL = `${REPOSITORY_URL}/releases`;
@@ -498,12 +498,26 @@ function documentPage({ title, subtitle, path, body, action = "" }) {
 function changelog() {
   return documentPage({
     title: `VERSION ${VERSION}`,
-    subtitle: "Closed Alpha Quality Update",
+    subtitle: "Aster Social",
     path: "/changelog",
     action: `<a class="button green" href="/download">DOWNLOAD ${VERSION}</a>`,
     body: `
       <section class="release">
         <div class="release-label">${VERSION}<small>CURRENT</small></div>
+        <div>
+          <h2>ASTER SOCIAL</h2>
+          <ul>
+            <li>Freunde anhand ihres Minecraft-Namens finden und Anfragen senden.</li>
+            <li>Private Chats mit Screenshots und Modpack-Dateien.</li>
+            <li>Neu gestaltete Benachrichtigungen und Desktop-Hinweise.</li>
+            <li>Überarbeitetes Einstellungsmenü mit Speicher-, Präsenz- und Datenschutzoptionen.</li>
+            <li>Verbesserte Wiederherstellung signierter Launcher-Updates.</li>
+          </ul>
+          <p><a href="${RELEASE_URL}" rel="noreferrer">Release auf GitHub ansehen →</a></p>
+        </div>
+      </section>
+      <section class="release">
+        <div class="release-label">0.4.8<small>QUALITY</small></div>
         <div>
           <h2>CLOSED ALPHA QUALITY UPDATE</h2>
           <ul>
@@ -511,9 +525,8 @@ function changelog() {
             <li>Automatische Aktualisierung des aktiven Minecraft-Skins.</li>
             <li>Korrigierter Update-Fortschritt nach einem Neustart des Launchers.</li>
             <li>Einfachere Sortiersteuerung und weitere Launcher-Verbesserungen.</li>
-            <li>Neue Aster-Website mit direktem Installer-Download und rechtlichen Informationen.</li>
+            <li>Aster-Website mit direktem Installer-Download und rechtlichen Informationen.</li>
           </ul>
-          <p><a href="${RELEASE_URL}" rel="noreferrer">Release auf GitHub ansehen →</a></p>
         </div>
       </section>
       <section class="release">

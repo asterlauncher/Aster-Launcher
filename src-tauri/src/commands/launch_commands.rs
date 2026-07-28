@@ -1364,6 +1364,7 @@ fn build_launch_arguments(
     account: &StoredAccount,
     instance_directory: &Path,
     client_id: &str,
+    memory_gb: u8,
 ) -> (Vec<String>, Vec<String>) {
     let classpath = std::env::join_paths(&prepared.classpath)
         .unwrap_or_default()
@@ -1405,7 +1406,11 @@ fn build_launch_arguments(
     replacements.insert("${auth_xuid}", String::new());
     replacements.insert("${clientid}", client_id.to_owned());
 
-    let mut jvm = vec!["-Xms512M".to_owned(), "-Xmx4096M".to_owned()];
+    let memory_gb = memory_gb.clamp(2, 24);
+    let mut jvm = vec![
+        "-Xms512M".to_owned(),
+        format!("-Xmx{}M", u32::from(memory_gb) * 1024),
+    ];
     let mut game = Vec::new();
     if let Some(arguments) = &prepared.metadata.arguments {
         jvm.extend(
@@ -1485,6 +1490,7 @@ pub async fn launch_instance(
     instance_id: String,
     game_version: String,
     loader: String,
+    memory_gb: u8,
 ) -> Result<LaunchStarted, String> {
     validate_instance_id(&instance_id)?;
     if game_version.trim().is_empty() {
@@ -1548,6 +1554,7 @@ pub async fn launch_instance(
         &account,
         &instance_directory,
         auth.service.client_id().unwrap_or_default(),
+        memory_gb,
     );
 
     let logs = instance_directory.join("logs");
@@ -1694,14 +1701,16 @@ mod tests {
             minecraft_expires_at: 1,
             updated_at: 1,
         };
-        let (_, game) = build_launch_arguments(
+        let (jvm, game) = build_launch_arguments(
             &prepared,
             &account,
             PathBuf::from("instance").as_path(),
             "id",
+            6,
         );
         assert!(game.iter().any(|value| value == "AsterPlayer"));
         assert!(game.iter().any(|value| value == "minecraft-secret"));
         assert!(!game.iter().any(|value| value == "refresh-secret"));
+        assert!(jvm.iter().any(|value| value == "-Xmx6144M"));
     }
 }

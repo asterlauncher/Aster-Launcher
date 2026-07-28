@@ -305,13 +305,7 @@ export function HomePage() {
               <button
                 type="button"
                 className="friends-button"
-                onClick={() =>
-                  notify({
-                    title: "Friends",
-                    message: "No friends are online right now.",
-                    tone: "info",
-                  })
-                }
+                onClick={() => openModal("friends")}
               >
                 <Users size={14} />
                 Your Friends

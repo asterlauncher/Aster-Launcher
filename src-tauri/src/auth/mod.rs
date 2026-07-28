@@ -204,12 +204,8 @@ impl AuthService {
         Ok(outcome.account)
     }
 
-    async fn sync_stored_profile(
-        &self,
-        active: StoredAccount,
-    ) -> Result<PublicAccount, AuthError> {
-        let profile =
-            minecraft::fetch_profile(&self.http, &active.minecraft_access_token).await?;
+    async fn sync_stored_profile(&self, active: StoredAccount) -> Result<PublicAccount, AuthError> {
+        let profile = minecraft::fetch_profile(&self.http, &active.minecraft_access_token).await?;
         if profile.id != active.account.id {
             return Err(AuthError::MinecraftProfileUnavailable);
         }

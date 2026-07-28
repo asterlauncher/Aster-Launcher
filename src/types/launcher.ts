@@ -64,6 +64,7 @@ export interface DownloadItem {
 export type ModalKind =
   | "add-account"
   | "manage-account"
+  | "friends"
   | "aster-subscription"
   | "installation-failure"
   | "mod-conflict"
@@ -82,7 +83,7 @@ export interface LauncherNotification {
   title: string;
   message: string;
   tone: "success" | "info" | "warning" | "error";
-  source: "system" | "download" | "account";
+  source: "system" | "download" | "account" | "social";
   createdAt: string;
   read: boolean;
   action?: {

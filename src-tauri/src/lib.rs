@@ -114,6 +114,7 @@ pub fn run() {
             commands::content_commands::resolve_content_install,
             commands::content_commands::open_content_project,
             commands::instance_commands::open_instance_folder,
+            commands::instance_commands::open_launcher_data_folder,
             commands::instance_commands::create_instance_structure,
             commands::instance_commands::list_instance_content,
             commands::instance_commands::scan_instance_mods,
@@ -128,7 +129,10 @@ pub fn run() {
             commands::modpack_commands::install_modpack,
             commands::modpack_commands::export_modpack,
             commands::modpack_commands::import_modpack,
+            commands::social_commands::upload_chat_attachment,
+            commands::social_commands::download_chat_attachment,
             commands::update_commands::check_launcher_update,
+            commands::update_commands::open_launcher_downloads,
             commands::update_commands::download_launcher_update,
             commands::update_commands::install_launcher_update,
         ])

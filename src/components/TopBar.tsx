@@ -11,6 +11,7 @@ import {
   Inbox,
   Info,
   LogOut,
+  MessageSquareText,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -103,13 +104,16 @@ export function TopBar() {
   const updateInProgress = ["downloading", "installing"].includes(updater.status);
   const hasUpdateNotification =
     updater.status === "available" || updateInProgress;
+  const hasUpdateError = updater.status === "error";
   const unreadNotifications = notifications.filter(
     (notification) => !notification.read,
   ).length;
   const notificationCount =
-    unreadNotifications + (hasUpdateNotification ? 1 : 0);
+    unreadNotifications +
+    (hasUpdateNotification || hasUpdateError ? 1 : 0);
   const notificationItems =
-    notifications.length + (hasUpdateNotification ? 1 : 0);
+    notifications.length +
+    (hasUpdateNotification || hasUpdateError ? 1 : 0);
   const presenceLabel = presenceConnected
     ? `${presence.onlineCount?.toLocaleString() ?? "0"} ${
         presence.onlineCount === 1 ? "player" : "players"
@@ -472,8 +476,31 @@ export function TopBar() {
               </article>
             )}
 
+            {hasUpdateError && (
+              <article className="launcher-update-state is-error">
+                <CircleAlert size={16} />
+                <div>
+                  <strong>Update check failed</strong>
+                  <small>
+                    {updater.error ??
+                      "The launcher could not contact the update service."}
+                  </small>
+                  <button
+                    type="button"
+                    onClick={() => void updater.openManualDownload()}
+                  >
+                    <Download size={10} />
+                    Download manually
+                  </button>
+                </div>
+              </article>
+            )}
+
             {notifications.map((notification) => {
-              const NotificationIcon = notificationIcons[notification.tone];
+              const NotificationIcon =
+                notification.source === "social"
+                  ? MessageSquareText
+                  : notificationIcons[notification.tone];
               return (
                 <article
                   key={notification.id}
@@ -486,6 +513,11 @@ export function TopBar() {
                     <NotificationIcon size={14} />
                   </span>
                   <div>
+                    <span className="notification-source">
+                      {notification.source === "social"
+                        ? "ASTER SOCIAL"
+                        : notification.source.toUpperCase()}
+                    </span>
                     <header>
                       <strong>{notification.title}</strong>
                       <time>{formatNotificationTime(notification.createdAt)}</time>
@@ -525,16 +557,16 @@ export function TopBar() {
               );
             })}
 
-            {notifications.length === 0 && !hasUpdateNotification && (
+            {notifications.length === 0 &&
+              !hasUpdateNotification &&
+              !hasUpdateError && (
               <div className="notification-center-empty">
                 <Inbox size={22} />
                 <strong>You're all caught up</strong>
                 <span>
                   {updater.status === "checking"
                     ? "Checking for launcher updates..."
-                    : updater.status === "error"
-                      ? "No alerts. Update service is currently unavailable."
-                      : "Important launcher activity will appear here."}
+                    : "Important launcher activity will appear here."}
                 </span>
               </div>
             )}

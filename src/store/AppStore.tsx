@@ -39,6 +39,7 @@ import type {
   PageId,
   Toast,
 } from "../types/launcher";
+import { getLauncherSettings } from "../services/settings";
 
 const NOTIFICATION_STORAGE_KEY = "aster-launcher.notifications.v1";
 
@@ -178,6 +179,7 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
 
   const pushNotification = useCallback(
     (notification: NewLauncherNotification) => {
+      if (!getLauncherSettings().activityNotifications) return;
       const id =
         notification.id ??
         (typeof crypto !== "undefined" && "randomUUID" in crypto

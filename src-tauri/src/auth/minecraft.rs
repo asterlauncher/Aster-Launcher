@@ -224,14 +224,14 @@ pub async fn cache_skin(
             if path == destination {
                 continue;
             }
-            let is_previous_skin = path
-                .file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| {
-                    name == format!("{profile_id}.png")
-                        || (name.starts_with(&format!("{profile_id}-"))
-                            && name.ends_with(".png"))
-                });
+            let is_previous_skin =
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .is_some_and(|name| {
+                        name == format!("{profile_id}.png")
+                            || (name.starts_with(&format!("{profile_id}-"))
+                                && name.ends_with(".png"))
+                    });
             if is_previous_skin {
                 let _ = tokio::fs::remove_file(path).await;
             }

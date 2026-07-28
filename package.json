@@ -1,10 +1,10 @@
 {
   "name": "aster-launcher",
   "private": true,
-  "version": "0.4.8",
+  "version": "0.5.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --configLoader runner",
     "build": "tsc && vite build --configLoader runner",
     "preview": "vite preview",
     "tauri": "tauri",

@@ -9,16 +9,18 @@ signed in-launcher updates.
 
 ## Current release
 
-**0.4.8 — Closed Alpha Quality Update**
+**0.5.0 — Aster Social**
 
 The original interface prototype has grown into a functional launcher with
 Microsoft, Xbox, and Minecraft authentication; Vanilla, Fabric, and Forge
 instances; real game launching; Modrinth and CurseForge discovery; supported
 required dependency installation; modpack import and export; download and
-notification centers; live launcher presence; and signed updates.
+notification centers; live launcher presence; signed updates; and the first
+Aster Social release with friends, requests, private chat, screenshots, and
+modpack sharing.
 
 See the complete [version history](docs/VERSION_HISTORY.md) for every release
-from 0.1.0 through 0.4.8.
+from 0.1.0 through 0.5.0.
 
 ## Development
 
@@ -43,7 +45,7 @@ npm run build
 
 ## Releases and updates
 
-Release tags use the format `app-v0.4.8`. GitHub Actions builds the Windows
+Release tags use the format `app-v0.5.0`. GitHub Actions builds the Windows
 installer and attaches a signed `aster-update.json` manifest. Existing launcher
 installations only accept update manifests signed by Aster's embedded Ed25519
 update key and installers whose SHA-256 hash matches the manifest.

@@ -1,5 +1,17 @@
 # Aster Launcher version history
 
+## 0.5.0 — Aster Social
+
+- Added player search by exact Minecraft username, friend requests, online
+  presence, and private conversations.
+- Added screenshot and modpack attachments with private signed downloads.
+- Redesigned notifications, desktop toasts, and the Settings control center.
+- Added persistent update, notification, presence, motion, storage, and privacy
+  preferences.
+- Added configurable Minecraft memory from 2–24 GB and passed the selected
+  value to every Java launch.
+- Improved signed update discovery and recovery through GitHub Releases.
+
 ## 0.4.8 — Closed Alpha Quality Update
 
 - Added current Minecraft releases to instance creation with a live Mojang
