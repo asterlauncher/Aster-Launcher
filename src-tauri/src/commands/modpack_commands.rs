@@ -244,7 +244,7 @@ fn trusted_download_url(value: &str) -> Result<url::Url, String> {
 
 fn http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
-        .user_agent("AsterLauncher/0.5.0")
+        .user_agent("AsterLauncher/0.5.1")
         .build()
         .map_err(|_| "The download client could not be prepared.".to_owned())
 }
@@ -1067,6 +1067,54 @@ pub async fn export_modpack(
     })();
     let _ = std::fs::remove_dir_all(&staging);
     export
+}
+
+#[tauri::command]
+pub async fn export_modpack_for_sharing(
+    app: AppHandle,
+    instance_id: String,
+    name: String,
+    version: String,
+    game_version: String,
+    loader: String,
+) -> Result<String, String> {
+    let cache = app
+        .path()
+        .app_cache_dir()
+        .map_err(|_| "The launcher cache folder is unavailable.".to_owned())?
+        .join("chat-modpacks");
+    std::fs::create_dir_all(&cache)
+        .map_err(|_| "The chat modpack cache could not be created.".to_owned())?;
+    let safe_name = name
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, ' ' | '-' | '_') {
+                character
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let safe_name = if safe_name.is_empty() {
+        "Aster Modpack".to_owned()
+    } else {
+        safe_name.chars().take(80).collect::<String>()
+    };
+    let destination = cache.join(format!("{safe_name}-{}.zip", Uuid::new_v4()));
+
+    export_modpack(
+        app,
+        instance_id,
+        name,
+        version,
+        game_version,
+        loader,
+        destination.to_string_lossy().into_owned(),
+    )
+    .await
 }
 
 #[tauri::command]

@@ -1,4 +1,4 @@
-const VERSION = "0.5.0";
+const VERSION = "0.5.1";
 const REPOSITORY_URL =
   "https://github.com/asterlauncher/Aster-Launcher";
 const RELEASE_URL = `${REPOSITORY_URL}/releases`;
@@ -498,12 +498,25 @@ function documentPage({ title, subtitle, path, body, action = "" }) {
 function changelog() {
   return documentPage({
     title: `VERSION ${VERSION}`,
-    subtitle: "Aster Social",
+    subtitle: "Social Sharing & Public Build Fix",
     path: "/changelog",
     action: `<a class="button green" href="/download">DOWNLOAD ${VERSION}</a>`,
     body: `
       <section class="release">
         <div class="release-label">${VERSION}<small>CURRENT</small></div>
+        <div>
+          <h2>SOCIAL SHARING &amp; PUBLIC BUILD FIX</h2>
+          <ul>
+            <li>Eigene Modpacks direkt aus der Bibliothek im Chat auswählen und automatisch exportieren.</li>
+            <li>Empfangene Modpacks mit einem Klick in My Modpacks installieren.</li>
+            <li>Download-Fortschritt und Installationsfehler direkt im Launcher verfolgen.</li>
+            <li>Microsoft-Login, Friends und Presence funktionieren nun in öffentlichen Test-Builds.</li>
+          </ul>
+          <p><a href="${RELEASE_URL}" rel="noreferrer">Release auf GitHub ansehen →</a></p>
+        </div>
+      </section>
+      <section class="release">
+        <div class="release-label">0.5.0<small>SOCIAL</small></div>
         <div>
           <h2>ASTER SOCIAL</h2>
           <ul>
@@ -511,9 +524,7 @@ function changelog() {
             <li>Private Chats mit Screenshots und Modpack-Dateien.</li>
             <li>Neu gestaltete Benachrichtigungen und Desktop-Hinweise.</li>
             <li>Überarbeitetes Einstellungsmenü mit Speicher-, Präsenz- und Datenschutzoptionen.</li>
-            <li>Verbesserte Wiederherstellung signierter Launcher-Updates.</li>
           </ul>
-          <p><a href="${RELEASE_URL}" rel="noreferrer">Release auf GitHub ansehen →</a></p>
         </div>
       </section>
       <section class="release">
@@ -766,7 +777,7 @@ export default {
     return new Response(render(), {
       headers: {
         "content-type": "text/html; charset=utf-8",
-        "cache-control": "public, max-age=300",
+        "cache-control": "no-cache, no-store, must-revalidate",
         ...securityHeaders,
       },
     });

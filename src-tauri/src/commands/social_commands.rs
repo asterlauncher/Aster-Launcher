@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use reqwest::{header, Client, Url};
 use serde::Serialize;
+use tauri::{AppHandle, Manager};
+use uuid::Uuid;
 
 const MAX_SCREENSHOT_BYTES: u64 = 12 * 1024 * 1024;
 const MAX_MODPACK_BYTES: u64 = 250 * 1024 * 1024;
@@ -137,13 +139,20 @@ pub async fn download_chat_attachment(
     destination_path: String,
     max_bytes: u64,
 ) -> Result<(), String> {
+    download_attachment_to_path(signed_url, PathBuf::from(destination_path), max_bytes).await
+}
+
+async fn download_attachment_to_path(
+    signed_url: String,
+    destination: PathBuf,
+    max_bytes: u64,
+) -> Result<(), String> {
     let download_url = validate_supabase_url(&signed_url, "sign")?;
     if download_url.query_pairs().all(|(key, _)| key != "token") {
         return Err("The signed download token is missing.".to_owned());
     }
     let hard_limit = MAX_MODPACK_BYTES.max(MAX_SCREENSHOT_BYTES);
     let limit = max_bytes.clamp(1, hard_limit);
-    let destination = PathBuf::from(destination_path);
     if destination.file_name().is_none() {
         return Err("Choose a valid destination file.".to_owned());
     }
@@ -190,5 +199,61 @@ pub async fn download_chat_attachment(
     tokio::fs::rename(&staging, &destination)
         .await
         .map_err(|_| "The downloaded attachment could not be finalized.".to_owned())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn download_chat_modpack_for_import(
+    app: AppHandle,
+    signed_url: String,
+    file_name: String,
+) -> Result<String, String> {
+    let extension = Path::new(&file_name)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if extension != "zip" && extension != "mrpack" {
+        return Err("Only ZIP and MRPACK chat attachments can be installed.".to_owned());
+    }
+    let cache = app
+        .path()
+        .app_cache_dir()
+        .map_err(|_| "The launcher cache folder is unavailable.".to_owned())?
+        .join("chat-modpacks");
+    tokio::fs::create_dir_all(&cache)
+        .await
+        .map_err(|_| "The chat modpack cache could not be created.".to_owned())?;
+    let destination = cache.join(format!("received-{}.{}", Uuid::new_v4(), extension));
+    download_attachment_to_path(signed_url, destination.clone(), MAX_MODPACK_BYTES).await?;
+    Ok(destination.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub async fn remove_cached_chat_attachment(
+    app: AppHandle,
+    source_path: String,
+) -> Result<(), String> {
+    let cache = app
+        .path()
+        .app_cache_dir()
+        .map_err(|_| "The launcher cache folder is unavailable.".to_owned())?
+        .join("chat-modpacks");
+    let source = PathBuf::from(source_path);
+    let parent = source
+        .parent()
+        .ok_or_else(|| "The cached attachment path is invalid.".to_owned())?;
+    let canonical_cache = std::fs::canonicalize(&cache)
+        .map_err(|_| "The chat modpack cache is unavailable.".to_owned())?;
+    let canonical_parent = std::fs::canonicalize(parent)
+        .map_err(|_| "The cached attachment folder is unavailable.".to_owned())?;
+    if canonical_parent != canonical_cache {
+        return Err("Only cached chat attachments can be removed.".to_owned());
+    }
+    if source.is_file() {
+        tokio::fs::remove_file(source)
+            .await
+            .map_err(|_| "The cached chat attachment could not be removed.".to_owned())?;
+    }
     Ok(())
 }

@@ -11,7 +11,7 @@ use crate::models::content::{
 const MODRINTH_API: &str = "https://api.modrinth.com/v2";
 const CURSEFORGE_API: &str = "https://api.curseforge.com/v1";
 const MINECRAFT_GAME_ID: u32 = 432;
-const USER_AGENT: &str = "AsterLauncher/0.5.0 (https://github.com/asterlauncher/Aster-Launcher)";
+const USER_AGENT: &str = "AsterLauncher/0.5.1 (https://github.com/asterlauncher/Aster-Launcher)";
 
 pub async fn search(
     provider: &str,

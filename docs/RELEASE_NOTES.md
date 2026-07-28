@@ -1,25 +1,21 @@
-# Aster Launcher 0.5.0 - Aster Social
+# Aster Launcher 0.5.1 - Social Sharing & Public Build Fix
 
-Version 0.5.0 begins the launcher’s social foundation.
+Version 0.5.1 makes the Aster Social foundation ready for external testers.
 
-- Add Aster players by their exact Minecraft username.
-- Send, accept, decline, and cancel friend requests.
-- See which friends currently have Aster Launcher open.
-- Open persistent private conversations from the Friends hub.
-- Receive launcher notifications for new requests and chat messages.
-- Use the redesigned notification center and animated desktop toasts.
-- Configure updates, notifications, presence, motion, storage, and privacy in
-  the redesigned Aster Control Center.
-- Choose 2–24 GB of Minecraft memory; the selected value is passed to Java for
-  every game launch.
-- Recover launcher updates through GitHub’s Releases API and manual fallback.
+- Select one of your installed modpacks directly from the chat attachment menu.
+- Let Aster export and upload the selected pack without choosing an archive.
+- Install a received modpack into My Modpacks with one click.
+- Follow received-pack downloads and installation failures in the download
+  center.
+- Sign in with Microsoft from the public installer without a local `.env`
+  developer file.
+- Connect to Aster Social and live presence from public tester builds.
 
-The Social database uses persistent anonymous Supabase sessions and strict
-row-level access policies. Each launcher only sees its own requests,
-friendships, and friendship messages.
+Shared modpacks remain private between the two friends and are downloaded
+through short-lived signed links. Imported packs retain their included files
+and appear as ready instances in My Modpacks.
 
 This closed-alpha build is available for public testing. Minecraft: Java
-Edition must be owned separately, and social features require the Aster
-Supabase service to be available.
+Edition must be owned separately.
 Cosmetics, Aster Credits, and the Aster Subscription remain previews and are
 not available for purchase.

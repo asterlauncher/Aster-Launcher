@@ -81,6 +81,8 @@ pub struct AuthService {
     skin_directory: PathBuf,
 }
 
+const PUBLIC_MICROSOFT_CLIENT_ID: &str = "1dcf4f29-daa7-4822-bf79-65bf3c63fc3c";
+
 impl AuthService {
     pub fn new(skin_directory: PathBuf) -> Result<Self, AuthError> {
         let account_storage_path = skin_directory
@@ -90,7 +92,8 @@ impl AuthService {
         let client_id = std::env::var("VITE_MICROSOFT_CLIENT_ID")
             .ok()
             .or_else(|| option_env!("VITE_MICROSOFT_CLIENT_ID").map(ToOwned::to_owned))
-            .filter(|value| !value.trim().is_empty());
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| Some(PUBLIC_MICROSOFT_CLIENT_ID.to_owned()));
         let http = Client::builder()
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(25))

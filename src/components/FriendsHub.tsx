@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ChevronLeft,
   Check,
   Clock3,
   Download,
@@ -7,6 +8,7 @@ import {
   Image as ImageIcon,
   LoaderCircle,
   MessageSquareText,
+  PackagePlus,
   Paperclip,
   Search,
   Send,
@@ -32,14 +34,22 @@ import {
   respondToSocialFriendRequest,
   searchSocialPlayers,
   downloadSocialAttachment,
+  installSocialModpackAttachment,
   sendSocialAttachment,
   sendSocialFriendRequest,
   sendSocialMessage,
+  sendSocialModpack,
   type SocialFriend,
   type SocialMessage,
   type SocialPlayer,
   type SocialSnapshot,
 } from "../services/social";
+import {
+  addInstalledModpack,
+  readModpackLibrary,
+  subscribeModpackLibrary,
+  type InstalledModpack,
+} from "../services/modpackLibrary";
 import { useAppStore } from "../store/AppStore";
 
 type FriendsTab = "friends" | "requests" | "add";
@@ -73,7 +83,13 @@ function PlayerAvatar({
 }
 
 export function FriendsHub() {
-  const { account, loggedIn, beginMicrosoftLogin, notify } = useAppStore();
+  const {
+    account,
+    loggedIn,
+    beginMicrosoftLogin,
+    notify,
+    setDownloads,
+  } = useAppStore();
   const [tab, setTab] = useState<FriendsTab>("friends");
   const [snapshot, setSnapshot] = useState<SocialSnapshot | null>(null);
   const [selectedFriendId, setSelectedFriendId] = useState<string | null>(null);
@@ -85,9 +101,22 @@ export function FriendsHub() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [modpackPickerOpen, setModpackPickerOpen] = useState(false);
+  const [modpackLibrary, setModpackLibrary] =
+    useState<InstalledModpack[]>(readModpackLibrary);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const [installingAttachmentId, setInstallingAttachmentId] =
+    useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(
+    () =>
+      subscribeModpackLibrary(() => {
+        setModpackLibrary(readModpackLibrary());
+      }),
+    [],
+  );
 
   const errorMessage = (caught: unknown, fallback: string) => {
     if (caught instanceof Error && caught.message.trim()) {
@@ -284,6 +313,7 @@ export function FriendsHub() {
   ) => {
     if (!account || !selectedFriend || uploadingAttachment) return;
     setAttachmentMenuOpen(false);
+    setModpackPickerOpen(false);
     setUploadingAttachment(true);
     try {
       const sent = await sendSocialAttachment(
@@ -305,6 +335,31 @@ export function FriendsHub() {
     }
   };
 
+  const handleSendLibraryModpack = async (modpack: InstalledModpack) => {
+    if (!account || !selectedFriend || uploadingAttachment) return;
+    setAttachmentMenuOpen(false);
+    setModpackPickerOpen(false);
+    setUploadingAttachment(true);
+    try {
+      const sent = await sendSocialModpack(
+        account,
+        selectedFriend.friendshipId,
+        modpack,
+      );
+      if (!sent) return;
+      await refreshMessages(selectedFriend, true);
+      notify({
+        title: "Modpack sent",
+        message: `${modpack.name} was exported and shared with ${selectedFriend.minecraftName}.`,
+        tone: "success",
+      });
+    } catch (caught) {
+      setError(errorMessage(caught, "The modpack could not be sent."));
+    } finally {
+      setUploadingAttachment(false);
+    }
+  };
+
   const handleDownloadAttachment = async (item: SocialMessage) => {
     if (!item.attachment) return;
     try {
@@ -321,6 +376,66 @@ export function FriendsHub() {
       }
     } catch (caught) {
       setError(errorMessage(caught, "The attachment could not be downloaded."));
+    }
+  };
+
+  const handleInstallModpack = async (item: SocialMessage) => {
+    if (
+      !item.attachment ||
+      item.attachment.kind !== "modpack" ||
+      installingAttachmentId
+    ) {
+      return;
+    }
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const instanceId = `shared-${Date.now()}-${suffix}`;
+    const downloadId = `chat-modpack-${suffix}`;
+    setInstallingAttachmentId(item.id);
+    setDownloads((current) => [
+      {
+        id: downloadId,
+        title: item.attachment?.name ?? "Shared modpack",
+        detail: "Downloading from chat",
+        status: "queued",
+        progress: 0,
+      },
+      ...current,
+    ]);
+    try {
+      const result = await installSocialModpackAttachment(
+        item.attachment,
+        instanceId,
+        downloadId,
+      );
+      addInstalledModpack({
+        id: instanceId,
+        name: result.name,
+        version: result.gameVersion,
+        loader: result.loader,
+        lastPlayed: "Never played",
+        status: "ready",
+        favorite: false,
+        icon: "archive",
+        tone: "violet",
+        provider: "Local",
+      });
+      notify({
+        title: `${result.name} installed`,
+        message: `${result.installedFiles} files are ready in My Modpacks.`,
+        tone: "success",
+      });
+    } catch (caught) {
+      const message = errorMessage(caught, "The shared modpack could not be installed.");
+      setDownloads((current) =>
+        current.map((download) =>
+          download.id === downloadId
+            ? { ...download, status: "failed", detail: message }
+            : download,
+        ),
+      );
+      setError(message);
+    } finally {
+      setInstallingAttachmentId(null);
     }
   };
 
@@ -510,13 +625,33 @@ export function FriendsHub() {
                                   <strong>{item.attachment.name}</strong>
                                   <small>{formatAttachmentSize(item.attachment.size)}</small>
                                 </span>
-                                <button
-                                  type="button"
-                                  onClick={() => void handleDownloadAttachment(item)}
-                                  aria-label={`Download ${item.attachment.name}`}
-                                >
-                                  <Download size={13} />
-                                </button>
+                                <div className="social-modpack-actions">
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDownloadAttachment(item)}
+                                    aria-label={`Save ${item.attachment.name}`}
+                                    title="Save archive"
+                                  >
+                                    <Download size={13} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="social-install-modpack"
+                                    disabled={installingAttachmentId !== null}
+                                    onClick={() => void handleInstallModpack(item)}
+                                  >
+                                    {installingAttachmentId === item.id ? (
+                                      <LoaderCircle className="spin" size={12} />
+                                    ) : (
+                                      <PackagePlus size={12} />
+                                    )}
+                                    <span>
+                                      {installingAttachmentId === item.id
+                                        ? "INSTALLING"
+                                        : "INSTALL"}
+                                    </span>
+                                  </button>
+                                </div>
                               </div>
                             )}
                             <time>{formatMessageTime(item.createdAt)}</time>
@@ -529,9 +664,12 @@ export function FriendsHub() {
                       <div className="social-upload-control">
                         <button
                           type="button"
-                          className={attachmentMenuOpen ? "is-active" : ""}
-                          disabled={uploadingAttachment}
-                          onClick={() => setAttachmentMenuOpen((open) => !open)}
+                           className={attachmentMenuOpen ? "is-active" : ""}
+                           disabled={uploadingAttachment}
+                           onClick={() => {
+                             setAttachmentMenuOpen((open) => !open);
+                             setModpackPickerOpen(false);
+                           }}
                           aria-label="Upload screenshot or modpack"
                           aria-expanded={attachmentMenuOpen}
                         >
@@ -548,33 +686,92 @@ export function FriendsHub() {
                               initial={{ opacity: 0, y: 6, scale: 0.97 }}
                               animate={{ opacity: 1, y: 0, scale: 1 }}
                               exit={{ opacity: 0, y: 5, scale: 0.98 }}
-                              transition={{ duration: 0.12 }}
-                            >
-                              <header>
-                                <strong>SHARE IN CHAT</strong>
-                                <small>Private between friends</small>
-                              </header>
-                              <button
-                                type="button"
-                                onClick={() => void handleSendAttachment("screenshot")}
-                              >
-                                <span><ImageIcon size={15} /></span>
-                                <span>
-                                  <strong>Screenshot</strong>
-                                  <small>PNG, JPG or WebP · max 12 MB</small>
-                                </span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => void handleSendAttachment("modpack")}
-                              >
-                                <span><FileArchive size={15} /></span>
-                                <span>
-                                  <strong>Modpack</strong>
-                                  <small>ZIP or MRPACK · max 250 MB</small>
-                                </span>
-                              </button>
-                            </motion.div>
+                             transition={{ duration: 0.12 }}
+                           >
+                             {!modpackPickerOpen ? (
+                               <>
+                                 <header>
+                                   <strong>SHARE IN CHAT</strong>
+                                   <small>Private between friends</small>
+                                 </header>
+                                 <button
+                                   type="button"
+                                   onClick={() => void handleSendAttachment("screenshot")}
+                                 >
+                                   <span><ImageIcon size={15} /></span>
+                                   <span>
+                                     <strong>Screenshot</strong>
+                                     <small>PNG, JPG or WebP · max 12 MB</small>
+                                   </span>
+                                 </button>
+                                 <button
+                                   type="button"
+                                   onClick={() => setModpackPickerOpen(true)}
+                                 >
+                                   <span><FileArchive size={15} /></span>
+                                   <span>
+                                     <strong>My Modpack</strong>
+                                     <small>Export directly from your library</small>
+                                   </span>
+                                 </button>
+                               </>
+                             ) : (
+                               <>
+                                 <header className="social-modpack-picker-header">
+                                   <button
+                                     type="button"
+                                     onClick={() => setModpackPickerOpen(false)}
+                                     aria-label="Back to attachment types"
+                                   >
+                                     <ChevronLeft size={13} />
+                                   </button>
+                                   <span>
+                                     <strong>SELECT MODPACK</strong>
+                                     <small>It will be exported automatically</small>
+                                   </span>
+                                 </header>
+                                 <div className="social-modpack-picker-list">
+                                   {modpackLibrary.length ? (
+                                     modpackLibrary.map((modpack) => (
+                                       <button
+                                         type="button"
+                                         key={modpack.id}
+                                         onClick={() =>
+                                           void handleSendLibraryModpack(modpack)
+                                         }
+                                       >
+                                         <span><FileArchive size={14} /></span>
+                                         <span>
+                                           <strong>{modpack.name}</strong>
+                                           <small>
+                                             {modpack.version} · {modpack.loader}
+                                           </small>
+                                         </span>
+                                         <Send size={11} />
+                                       </button>
+                                     ))
+                                   ) : (
+                                     <div className="social-modpack-picker-empty">
+                                       <FileArchive size={18} />
+                                       <strong>No modpacks yet</strong>
+                                       <small>Create or install one first.</small>
+                                     </div>
+                                   )}
+                                 </div>
+                                 <button
+                                   type="button"
+                                   className="social-modpack-archive-fallback"
+                                   onClick={() => void handleSendAttachment("modpack")}
+                                 >
+                                   <span><Download size={14} /></span>
+                                   <span>
+                                     <strong>Choose archive instead</strong>
+                                     <small>ZIP or MRPACK · max 250 MB</small>
+                                   </span>
+                                 </button>
+                               </>
+                             )}
+                           </motion.div>
                           )}
                         </AnimatePresence>
                       </div>

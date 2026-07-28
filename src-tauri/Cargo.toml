@@ -1,6 +1,6 @@
 [package]
 name = "aster-launcher"
-version = "0.5.0"
+version = "0.5.1"
 description = "Aster desktop mod launcher frontend"
 authors = ["Aster"]
 edition = "2021"

@@ -666,7 +666,7 @@ pub async fn download_instance_content(
 
     emit_download_progress(&app, &download_id, 2, "Connecting to provider", None, None);
     let mut response = reqwest::Client::builder()
-        .user_agent("AsterLauncher/0.5.0")
+        .user_agent("AsterLauncher/0.5.1")
         .build()
         .map_err(|_| "The download client could not be prepared.".to_owned())?
         .get(url)

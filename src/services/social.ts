@@ -1,6 +1,10 @@
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import {
+  PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+  PUBLIC_SUPABASE_URL,
+} from "../config/publicServices";
 import type { PublicAccount } from "../types/auth";
 import { isTauriRuntime } from "./auth";
 
@@ -13,6 +17,21 @@ export interface SocialAttachment {
   mime: string;
   size: number;
   url: string;
+}
+
+export interface ShareableSocialModpack {
+  id: string;
+  name: string;
+  version: string;
+  loader: string;
+}
+
+export interface InstalledSocialModpack {
+  name: string;
+  version: string;
+  gameVersion: string;
+  loader: string;
+  installedFiles: number;
 }
 
 export interface SocialPlayer {
@@ -95,9 +114,11 @@ interface UploadedAttachmentResult {
   size: number;
 }
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL?.trim();
+const supabaseUrl =
+  import.meta.env.VITE_SUPABASE_URL?.trim() || PUBLIC_SUPABASE_URL;
 const supabasePublishableKey =
-  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ||
+  PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 const SOCIAL_AUTH_COOLDOWN_KEY = "aster-social.auth-cooldown.v1";
 const SOCIAL_AUTH_COOLDOWN_MS = 10 * 60 * 1000;
 
@@ -529,28 +550,12 @@ export async function loadSocialMessages(
   }
 }
 
-export async function sendSocialAttachment(
+async function uploadSocialAttachment(
   account: PublicAccount,
   friendshipId: string,
   kind: SocialAttachmentKind,
+  selected: string,
 ) {
-  if (!isTauriRuntime()) {
-    throw new Error("Chat attachments are available in the native launcher.");
-  }
-  const selected = await open({
-    multiple: false,
-    directory: false,
-    title:
-      kind === "screenshot"
-        ? "Choose a screenshot"
-        : "Choose a modpack archive",
-    filters:
-      kind === "screenshot"
-        ? [{ name: "Screenshots", extensions: ["png", "jpg", "jpeg", "webp"] }]
-        : [{ name: "Modpacks", extensions: ["zip", "mrpack"] }],
-  });
-  if (!selected || Array.isArray(selected)) return false;
-
   let uploadedPath: string | null = null;
   try {
     const client = getSocialClient();
@@ -603,6 +608,59 @@ export async function sendSocialAttachment(
   }
 }
 
+export async function sendSocialAttachment(
+  account: PublicAccount,
+  friendshipId: string,
+  kind: SocialAttachmentKind,
+) {
+  if (!isTauriRuntime()) {
+    throw new Error("Chat attachments are available in the native launcher.");
+  }
+  const selected = await open({
+    multiple: false,
+    directory: false,
+    title:
+      kind === "screenshot"
+        ? "Choose a screenshot"
+        : "Choose a modpack archive",
+    filters:
+      kind === "screenshot"
+        ? [{ name: "Screenshots", extensions: ["png", "jpg", "jpeg", "webp"] }]
+        : [{ name: "Modpacks", extensions: ["zip", "mrpack"] }],
+  });
+  if (!selected || Array.isArray(selected)) return false;
+  return uploadSocialAttachment(account, friendshipId, kind, selected);
+}
+
+export async function sendSocialModpack(
+  account: PublicAccount,
+  friendshipId: string,
+  modpack: ShareableSocialModpack,
+) {
+  if (!isTauriRuntime()) {
+    throw new Error("Modpack sharing is available in the native launcher.");
+  }
+  const exportedPath = await invoke<string>("export_modpack_for_sharing", {
+    instanceId: modpack.id,
+    name: modpack.name,
+    version: modpack.version,
+    gameVersion: modpack.version,
+    loader: modpack.loader,
+  });
+  try {
+    return await uploadSocialAttachment(
+      account,
+      friendshipId,
+      "modpack",
+      exportedPath,
+    );
+  } finally {
+    await invoke("remove_cached_chat_attachment", {
+      sourcePath: exportedPath,
+    }).catch(() => undefined);
+  }
+}
+
 export async function downloadSocialAttachment(
   attachment: SocialAttachment,
 ) {
@@ -629,6 +687,35 @@ export async function downloadSocialAttachment(
     maxBytes: attachment.kind === "screenshot" ? 12 * 1024 * 1024 : 250 * 1024 * 1024,
   });
   return true;
+}
+
+export async function installSocialModpackAttachment(
+  attachment: SocialAttachment,
+  instanceId: string,
+  downloadId: string,
+): Promise<InstalledSocialModpack> {
+  if (!isTauriRuntime()) {
+    throw new Error("Modpack installation is available in the native launcher.");
+  }
+  if (attachment.kind !== "modpack") {
+    throw new Error("This chat attachment is not a modpack.");
+  }
+  const signedUrl = await signedAttachmentUrl(attachment.path);
+  const sourcePath = await invoke<string>("download_chat_modpack_for_import", {
+    signedUrl,
+    fileName: attachment.name,
+  });
+  try {
+    return await invoke<InstalledSocialModpack>("import_modpack", {
+      instanceId,
+      sourcePath,
+      downloadId,
+    });
+  } finally {
+    await invoke("remove_cached_chat_attachment", {
+      sourcePath,
+    }).catch(() => undefined);
+  }
 }
 
 export async function sendSocialMessage(

@@ -3,7 +3,7 @@ import site from "../worker/index.js";
 
 const pages = [
   ["/", "EVERYTHING YOU NEED."],
-  ["/changelog", "Aster Social"],
+  ["/changelog", "Social Sharing"],
   ["/privacy", "Datenschutzhinweise"],
   ["/legal", "asterlauncher@gmail.com"],
 ];
@@ -43,12 +43,12 @@ globalThis.fetch = async (input) => {
   if (url.startsWith("https://api.github.com/")) {
     return Response.json([
       {
-        tag_name: "app-v0.5.0",
+        tag_name: "app-v0.5.1",
         assets: [
           {
-            name: "Aster Launcher_0.5.0_x64-setup.exe",
+            name: "Aster Launcher_0.5.1_x64-setup.exe",
             browser_download_url:
-              "https://github.com/asterlauncher/Aster-Launcher/releases/download/app-v0.5.0/Aster.Launcher_0.5.0_x64-setup.exe",
+              "https://github.com/asterlauncher/Aster-Launcher/releases/download/app-v0.5.1/Aster.Launcher_0.5.1_x64-setup.exe",
           },
         ],
       },

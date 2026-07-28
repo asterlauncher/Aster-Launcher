@@ -1,5 +1,15 @@
 # Aster Launcher version history
 
+## 0.5.1 — Social Sharing & Public Build Fix
+
+- Added direct selection of owned instances when sharing a modpack in chat.
+- Added automatic temporary export and private upload of shared modpacks.
+- Added one-click installation of received modpacks into My Modpacks.
+- Added download-center progress and clear installation feedback for received
+  packs.
+- Fixed Microsoft sign-in being unconfigured in public GitHub builds.
+- Bundled the public Aster Social and presence configuration for tester builds.
+
 ## 0.5.0 — Aster Social
 
 - Added player search by exact Minecraft username, friend requests, online
