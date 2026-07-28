@@ -498,12 +498,26 @@ function documentPage({ title, subtitle, path, body, action = "" }) {
 function changelog() {
   return documentPage({
     title: `VERSION ${VERSION}`,
-    subtitle: "Closed Alpha Foundation Update",
+    subtitle: "Closed Alpha Quality Update",
     path: "/changelog",
     action: `<a class="button green" href="/download">DOWNLOAD ${VERSION}</a>`,
     body: `
       <section class="release">
         <div class="release-label">${VERSION}<small>CURRENT</small></div>
+        <div>
+          <h2>CLOSED ALPHA QUALITY UPDATE</h2>
+          <ul>
+            <li>Aktuelle Minecraft-Versionen aus Mojangs Versionsdienst mit zuverlässiger Fallback-Liste.</li>
+            <li>Automatische Aktualisierung des aktiven Minecraft-Skins.</li>
+            <li>Korrigierter Update-Fortschritt nach einem Neustart des Launchers.</li>
+            <li>Einfachere Sortiersteuerung und weitere Launcher-Verbesserungen.</li>
+            <li>Neue Aster-Website mit direktem Installer-Download und rechtlichen Informationen.</li>
+          </ul>
+          <p><a href="${RELEASE_URL}" rel="noreferrer">Release auf GitHub ansehen →</a></p>
+        </div>
+      </section>
+      <section class="release">
+        <div class="release-label">0.4.7<small>FOUNDATION</small></div>
         <div>
           <h2>CLOSED ALPHA FOUNDATION UPDATE</h2>
           <ul>
@@ -514,7 +528,6 @@ function changelog() {
             <li>Download-Warteschlange, Benachrichtigungen und signierte Launcher-Updates.</li>
             <li>Stabileres Forge-Setup, korrigierter Export und verbesserte Windows-Integration.</li>
           </ul>
-          <p><a href="${RELEASE_URL}" rel="noreferrer">Release auf GitHub ansehen →</a></p>
         </div>
       </section>
       <section class="release">

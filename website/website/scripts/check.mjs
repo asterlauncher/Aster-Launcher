@@ -3,7 +3,7 @@ import site from "../worker/index.js";
 
 const pages = [
   ["/", "EVERYTHING YOU NEED."],
-  ["/changelog", "Closed Alpha Foundation Update"],
+  ["/changelog", "Closed Alpha Quality Update"],
   ["/privacy", "Datenschutzhinweise"],
   ["/legal", "asterlauncher@gmail.com"],
 ];
@@ -25,6 +25,15 @@ for (const [path, expectedText] of pages) {
 
 const missing = await site.fetch(new Request("https://aster.test/not-found"));
 assert.equal(missing.status, 404);
+
+const changelog = await site.fetch(
+  new Request("https://aster.test/changelog"),
+);
+const changelogHtml = await changelog.text();
+assert.match(changelogHtml, /0\.4\.8/);
+assert.match(changelogHtml, /CLOSED ALPHA QUALITY UPDATE/);
+assert.match(changelogHtml, /0\.4\.7/);
+assert.match(changelogHtml, /CLOSED ALPHA FOUNDATION UPDATE/);
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input) => {
