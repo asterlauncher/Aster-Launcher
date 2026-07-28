@@ -19,8 +19,10 @@ $publishPaths = @(
     "docs/releases/0.5.1.md",
     "package-lock.json",
     "package.json",
+    "scripts/create-update-manifest.mjs",
     "scripts/publish-0.5.1.ps1",
     "scripts/publish-website.ps1",
+    "scripts/repair-0.5.1-update.ps1",
     "src-tauri/Cargo.lock",
     "src-tauri/Cargo.toml",
     "src-tauri/src/auth/mod.rs",
@@ -224,6 +226,27 @@ $hasInstaller = $releaseAssets | Where-Object { $_ -match "_x64-setup\.exe$" }
 $hasManifest = $releaseAssets | Where-Object { $_ -eq "aster-update.json" }
 if (-not $hasInstaller -or -not $hasManifest) {
     throw "The release is incomplete. Installer or aster-update.json is missing."
+}
+
+$verificationDirectory = Join-Path $env:TEMP "aster-launcher-update-verification-$version"
+New-Item -ItemType Directory -Path $verificationDirectory -Force | Out-Null
+Invoke-Checked -Program $gh -Arguments @(
+    "release", "download", $tag,
+    "--repo", $repository,
+    "--pattern", "aster-update.json",
+    "--dir", $verificationDirectory,
+    "--clobber"
+)
+$publishedManifest = Get-Content (
+    Join-Path $verificationDirectory "aster-update.json"
+) -Raw | ConvertFrom-Json
+$publishedInstallerUrl = (& $gh release view $tag `
+    --repo $repository `
+    --json assets `
+    --jq '.assets[] | select(.name | endswith("_x64-setup.exe")) | .url').Trim()
+Remove-Item -LiteralPath $verificationDirectory -Recurse -Force
+if (-not $publishedInstallerUrl -or $publishedManifest.url -ne $publishedInstallerUrl) {
+    throw "The update manifest does not point to the published installer asset."
 }
 
 if (-not $SkipWebsite) {

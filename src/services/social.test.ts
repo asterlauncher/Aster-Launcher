@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { isSocialRateLimitError } from "./social";
+import {
+  isSocialRateLimitError,
+  normalizeSocialSearchQuery,
+} from "./social";
 
 describe("Aster Social error handling", () => {
   it("recognizes Supabase request limits without exposing raw API errors", () => {
@@ -15,5 +18,10 @@ describe("Aster Social error handling", () => {
     expect(isSocialRateLimitError({ message: "Player was not found" })).toBe(
       false,
     );
+  });
+
+  it("keeps valid Minecraft underscores in player searches", () => {
+    expect(normalizeSocialSearchQuery("  synoi_  ")).toBe("synoi_");
+    expect(normalizeSocialSearchQuery("_Aster.Player%")).toBe("_AsterPlayer");
   });
 });

@@ -7,9 +7,9 @@ Before testing it with multiple launchers:
 2. Keep **Allow anonymous sign-ins** enabled under Authentication.
 3. Open the SQL editor.
 4. Paste and run the complete [`supabase/social.sql`](../supabase/social.sql)
-   file once. Run the updated file again after installing a build that adds
-   chat attachments; it safely upgrades the existing tables and creates the
-   private `chat-attachments` bucket.
+   file once. Re-run the complete file after a launcher update changes Social.
+   The migration is repeatable: it keeps friendships and messages, upgrades
+   functions and policies, and creates the private `chat-attachments` bucket.
 5. Start the native launcher with the existing `VITE_SUPABASE_URL` and
    `VITE_SUPABASE_PUBLISHABLE_KEY` values.
 6. Sign in to Minecraft, open **Your Friends**, and let every test player do
@@ -18,6 +18,13 @@ Before testing it with multiple launchers:
 ## Security model
 
 - Supabase creates one persistent anonymous identity per launcher installation.
+- A restored valid identity bypasses old anonymous-signup cooldowns, while
+  profile heartbeats are cached to avoid unnecessary Auth and database load.
+- Minecraft names containing underscores are searched literally through a
+  restricted database function.
+- If Windows loses an unused anonymous identity during an upgrade, its inactive
+  empty profile can be reclaimed after two minutes. Profiles with friends,
+  requests, or messages are never reassigned automatically.
 - The active Minecraft profile ID and name are attached to that identity.
 - Row-level security limits requests, friendships, and messages to their
   participants.

@@ -1,5 +1,13 @@
 # Aster Launcher version history
 
+## 0.5.2 — Social Reliability Hotfix
+
+- Fixed Social sessions being blocked by a previous anonymous sign-in cooldown.
+- Reduced unnecessary profile synchronization requests.
+- Fixed searches for Minecraft names containing underscores.
+- Added safe online-first player search and stale empty-profile recovery.
+- Added a Retry action to Social connection errors.
+
 ## 0.5.1 — Social Sharing & Public Build Fix
 
 - Added direct selection of owned instances when sharing a modpack in chat.

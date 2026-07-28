@@ -513,7 +513,19 @@ export function FriendsHub() {
             animate={{ opacity: 1, y: 0 }}
           >
             <span>{error}</span>
-            <button type="button" onClick={() => setError(null)} aria-label="Dismiss error">
+            <button
+              className="social-error-retry"
+              type="button"
+              onClick={() => void refreshSnapshot()}
+            >
+              Retry
+            </button>
+            <button
+              className="social-error-dismiss"
+              type="button"
+              onClick={() => setError(null)}
+              aria-label="Dismiss error"
+            >
               <X size={12} />
             </button>
           </motion.div>

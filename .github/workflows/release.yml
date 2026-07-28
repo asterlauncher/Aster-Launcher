@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - "app-v*"
+    branches:
+      - main
+    paths:
+      - "docs/releases/0.5.2.md"
   workflow_dispatch:
 
 permissions:
@@ -42,16 +46,17 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: app-v__VERSION__
-          releaseName: "Aster Launcher v__VERSION__"
+          tagName: app-v0.5.2
+          releaseName: "Aster Launcher v0.5.2"
           releaseBody: |
-            # Aster Launcher 0.5.1 — Social Sharing & Public Build Fix
+            # Aster Launcher 0.5.2 — Social Reliability Hotfix
 
-            - Direct modpack selection and automatic private export in chat
-            - One-click installation of received modpacks
-            - Download-center progress for shared packs
-            - Microsoft sign-in configuration fixed for public builds
-            - Aster Social and presence enabled in tester installers
+            - Existing Social sessions are restored before anonymous sign-in cooldowns
+            - Duplicate profile heartbeats and database requests are reduced
+            - Minecraft names containing underscores work in player search
+            - Player search uses a safe online-first database function
+            - Unused stale installer identities can be reclaimed safely
+            - Social connection errors now include an in-place Retry action
 
             This is a closed-alpha build for public testing. Minecraft: Java Edition must be owned separately.
           generateReleaseNotes: true
@@ -67,5 +72,17 @@ jobs:
           $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
           $installer = Get-ChildItem src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
           if (-not $installer) { throw "NSIS installer was not produced." }
-          node scripts/create-update-manifest.mjs $installer.FullName aster-update.json
+          $tag = "app-v$version"
+          $release = gh release view $tag --json assets | ConvertFrom-Json
+          $publishedInstaller = @(
+            $release.assets |
+              Where-Object { $_.name -match '_x64-setup\.exe$' }
+          )
+          if ($publishedInstaller.Count -ne 1) {
+            throw "Exactly one published NSIS installer was expected."
+          }
+          node scripts/create-update-manifest.mjs `
+            $installer.FullName `
+            aster-update.json `
+            $publishedInstaller[0].url
           gh release upload "app-v$version" aster-update.json --clobber

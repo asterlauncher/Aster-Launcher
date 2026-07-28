@@ -242,12 +242,59 @@ set search_path = public
 as $$
 declare
   result public.social_profiles;
+  conflicting_profile public.social_profiles;
+  conflicting_profile_has_social_data boolean;
 begin
   if auth.uid() is null then
     raise exception 'Authentication required';
   end if;
   if char_length(btrim(p_minecraft_name)) not between 3 and 16 then
     raise exception 'Invalid Minecraft name';
+  end if;
+  if btrim(p_minecraft_name) !~ '^[A-Za-z0-9_]{3,16}$' then
+    raise exception 'Invalid Minecraft name';
+  end if;
+
+  -- Installer updates retain the anonymous Supabase session. If Windows has
+  -- removed that WebView profile, reclaim only an unused, inactive profile
+  -- instead of leaving the Minecraft account permanently unable to connect.
+  select * into conflicting_profile
+  from public.social_profiles
+  where user_id <> auth.uid()
+    and (
+      minecraft_id = btrim(p_minecraft_id)
+      or minecraft_name = btrim(p_minecraft_name)::citext
+    )
+  order by updated_at desc
+  limit 1
+  for update;
+
+  if conflicting_profile.user_id is not null then
+    select
+      exists (
+        select 1 from public.friend_requests
+        where sender_id = conflicting_profile.user_id
+           or receiver_id = conflicting_profile.user_id
+      )
+      or exists (
+        select 1 from public.friendships
+        where member_a = conflicting_profile.user_id
+           or member_b = conflicting_profile.user_id
+      )
+      or exists (
+        select 1 from public.social_messages
+        where sender_id = conflicting_profile.user_id
+      )
+    into conflicting_profile_has_social_data;
+
+    if not conflicting_profile_has_social_data
+       and conflicting_profile.last_seen < now() - interval '2 minutes' then
+      delete from public.social_profiles
+      where user_id = conflicting_profile.user_id;
+    else
+      raise exception
+        'This Minecraft profile is connected to another active Aster Social session';
+    end if;
   end if;
 
   insert into public.social_profiles (
@@ -265,6 +312,40 @@ begin
 
   return result;
 end;
+$$;
+
+create or replace function public.social_search_players(
+  p_query text
+)
+returns table (
+  user_id uuid,
+  minecraft_id text,
+  minecraft_name citext,
+  last_seen timestamptz
+)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select
+    profile.user_id,
+    profile.minecraft_id,
+    profile.minecraft_name,
+    profile.last_seen
+  from public.social_profiles profile
+  where auth.uid() is not null
+    and profile.user_id <> auth.uid()
+    and char_length(btrim(p_query)) between 2 and 16
+    and btrim(p_query) ~ '^[A-Za-z0-9_]{2,16}$'
+    and strpos(
+      lower(profile.minecraft_name::text),
+      lower(btrim(p_query))
+    ) = 1
+  order by
+    (profile.last_seen > now() - interval '90 seconds') desc,
+    profile.minecraft_name
+  limit 8;
 $$;
 
 create or replace function public.social_send_friend_request(
@@ -391,12 +472,14 @@ end;
 $$;
 
 revoke all on function public.social_sync_profile(text, text) from public;
+revoke all on function public.social_search_players(text) from public;
 revoke all on function public.social_send_friend_request(text) from public;
 revoke all on function public.social_respond_friend_request(uuid, boolean) from public;
 revoke all on function public.social_cancel_friend_request(uuid) from public;
 revoke all on function public.social_remove_friend(uuid) from public;
 
 grant execute on function public.social_sync_profile(text, text) to authenticated;
+grant execute on function public.social_search_players(text) to authenticated;
 grant execute on function public.social_send_friend_request(text) to authenticated;
 grant execute on function public.social_respond_friend_request(uuid, boolean) to authenticated;
 grant execute on function public.social_cancel_friend_request(uuid) to authenticated;

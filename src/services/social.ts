@@ -121,6 +121,7 @@ const supabasePublishableKey =
   PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 const SOCIAL_AUTH_COOLDOWN_KEY = "aster-social.auth-cooldown.v1";
 const SOCIAL_AUTH_COOLDOWN_MS = 10 * 60 * 1000;
+const PROFILE_SYNC_TTL_MS = 45 * 1000;
 
 export const isSocialConfigured = Boolean(
   supabaseUrl && supabasePublishableKey,
@@ -129,6 +130,9 @@ export const isSocialConfigured = Boolean(
 let socialClient: SupabaseClient | null = null;
 let sessionPromise: Promise<User> | null = null;
 let socialAuthCooldownUntil = loadSocialAuthCooldown();
+let profileSyncPromise: Promise<User> | null = null;
+let profileSyncKey = "";
+let profileSyncedAt = 0;
 const attachmentUrlCache = new Map<
   string,
   { url: string; expiresAt: number }
@@ -176,6 +180,10 @@ function socialCooldownMessage() {
     Math.ceil((socialAuthCooldownUntil - Date.now()) / 60_000),
   );
   return `Aster Social is cooling down after too many sign-in attempts. Aster will retry automatically in about ${remainingMinutes} minute${remainingMinutes === 1 ? "" : "s"}.`;
+}
+
+export function normalizeSocialSearchQuery(query: string) {
+  return query.trim().replace(/[^a-zA-Z0-9_]/g, "").slice(0, 16);
 }
 
 function getSocialClient() {
@@ -232,6 +240,16 @@ function describeSocialError(error: unknown) {
   }
   if (error instanceof Error) return error.message;
   return "Aster Social could not complete this request.";
+}
+
+function isMissingSocialSearchFunction(error: unknown) {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as { code?: unknown; message?: unknown };
+  return (
+    candidate.code === "PGRST202" ||
+    (typeof candidate.message === "string" &&
+      candidate.message.includes("social_search_players"))
+  );
 }
 
 function cleanAttachmentName(path: string) {
@@ -292,12 +310,6 @@ async function messageFromRow(
 
 async function ensureSocialUser() {
   const client = getSocialClient();
-  if (socialAuthCooldownUntil > Date.now()) {
-    throw new Error(socialCooldownMessage());
-  }
-  if (socialAuthCooldownUntil > 0) {
-    setSocialAuthCooldown(0);
-  }
   if (sessionPromise) return sessionPromise;
 
   sessionPromise = (async () => {
@@ -306,7 +318,19 @@ async function ensureSocialUser() {
       error: sessionError,
     } = await client.auth.getSession();
     if (sessionError) throw sessionError;
-    if (session?.user) return session.user;
+    if (session?.user) {
+      setSocialAuthCooldown(0);
+      return session.user;
+    }
+
+    // A previous anonymous-signup limit must never block a restored session.
+    // Only delay creation when this installation genuinely needs a new user.
+    if (socialAuthCooldownUntil > Date.now()) {
+      throw new Error(socialCooldownMessage());
+    }
+    if (socialAuthCooldownUntil > 0) {
+      setSocialAuthCooldown(0);
+    }
 
     const { data, error } = await client.auth.signInAnonymously();
     if (error) throw error;
@@ -343,12 +367,40 @@ function playerFromProfile(profile: ProfileRow): SocialPlayer {
 async function syncProfile(account: PublicAccount) {
   const client = getSocialClient();
   const user = await ensureSocialUser();
-  const { error } = await client.rpc("social_sync_profile", {
-    p_minecraft_id: account.id,
-    p_minecraft_name: account.username,
-  });
-  if (error) throw error;
-  return user;
+  const nextKey = `${user.id}:${account.id}:${account.username.toLowerCase()}`;
+  const cacheIsFresh =
+    profileSyncKey === nextKey &&
+    profileSyncedAt > 0 &&
+    Date.now() - profileSyncedAt < PROFILE_SYNC_TTL_MS;
+
+  if (cacheIsFresh) return user;
+  if (profileSyncPromise && profileSyncKey === nextKey) {
+    return profileSyncPromise;
+  }
+
+  profileSyncKey = nextKey;
+  const currentSync = (async () => {
+    const { error } = await client.rpc("social_sync_profile", {
+      p_minecraft_id: account.id,
+      p_minecraft_name: account.username,
+    });
+    if (error) throw error;
+    profileSyncedAt = Date.now();
+    return user;
+  })();
+  profileSyncPromise = currentSync;
+
+  try {
+    return await currentSync;
+  } catch (error) {
+    profileSyncedAt = 0;
+    profileSyncKey = "";
+    throw error;
+  } finally {
+    if (profileSyncPromise === currentSync) {
+      profileSyncPromise = null;
+    }
+  }
 }
 
 async function loadProfiles(ids: string[]) {
@@ -440,19 +492,31 @@ export async function searchSocialPlayers(
   account: PublicAccount,
   query: string,
 ): Promise<SocialPlayer[]> {
-  const normalized = query.trim().replaceAll("%", "").replaceAll("_", "");
+  const normalized = normalizeSocialSearchQuery(query);
   if (normalized.length < 2) return [];
   try {
     const client = getSocialClient();
     const user = await syncProfile(account);
-    const { data, error } = await client
-      .from("social_profiles")
-      .select("user_id,minecraft_id,minecraft_name,last_seen")
-      .ilike("minecraft_name", `${normalized}%`)
-      .neq("user_id", user.id)
-      .limit(8);
-    if (error) throw error;
-    return ((data ?? []) as ProfileRow[]).map(playerFromProfile);
+    const searchResult = await client.rpc("social_search_players", {
+      p_query: normalized,
+    });
+    if (
+      searchResult.error &&
+      isMissingSocialSearchFunction(searchResult.error)
+    ) {
+      const fallback = await client
+        .from("social_profiles")
+        .select("user_id,minecraft_id,minecraft_name,last_seen")
+        .ilike("minecraft_name", `${normalized}%`)
+        .neq("user_id", user.id)
+        .limit(8);
+      if (fallback.error) throw fallback.error;
+      return ((fallback.data ?? []) as ProfileRow[]).map(playerFromProfile);
+    }
+    if (searchResult.error) throw searchResult.error;
+    return ((searchResult.data ?? []) as ProfileRow[])
+      .filter((profile) => profile.user_id !== user.id)
+      .map(playerFromProfile);
   } catch (error) {
     throw new Error(describeSocialError(error));
   }

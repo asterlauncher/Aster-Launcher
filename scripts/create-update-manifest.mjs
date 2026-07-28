@@ -11,7 +11,11 @@ import {
 import { basename, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const [installerArgument, outputArgument = "aster-update.json"] =
+const [
+  installerArgument,
+  outputArgument = "aster-update.json",
+  publishedInstallerUrlArgument,
+] =
   process.argv.slice(2);
 
 if (!installerArgument) {
@@ -45,9 +49,18 @@ const installerBytes = readFileSync(installerPath);
 const sha256 = createHash("sha256").update(installerBytes).digest("hex");
 const tag = `app-v${tauriConfig.version}`;
 const encodedInstaller = encodeURIComponent(basename(installerPath));
-const url =
+const generatedUrl =
   `https://github.com/asterlauncher/Aster-Launcher/` +
   `releases/download/${tag}/${encodedInstaller}`;
+const url = publishedInstallerUrlArgument ?? generatedUrl;
+const expectedUrlPrefix =
+  `https://github.com/asterlauncher/Aster-Launcher/releases/download/${tag}/`;
+
+if (!url.startsWith(expectedUrlPrefix)) {
+  throw new Error(
+    `The published installer URL must start with ${expectedUrlPrefix}`,
+  );
+}
 const publishedAt = new Date().toISOString();
 const privateKeyFallback = resolve(
   workspace,
