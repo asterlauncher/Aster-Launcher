@@ -69,7 +69,7 @@ if ($releaseExists) {
 
 & $ghPath release view $tag `
     --repo $repository `
-    --json url,isLatest,assets
+    --json url,tagName,isDraft,isPrerelease,assets
 if ($LASTEXITCODE -ne 0) {
     throw "The published release could not be verified."
 }
