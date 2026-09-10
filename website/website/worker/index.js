@@ -3,6 +3,7 @@ const REPOSITORY_URL =
 const RELEASE_URL = `${REPOSITORY_URL}/releases`;
 const RELEASE_API_URL =
   "https://api.github.com/repos/asterlauncher/Aster-Launcher/releases";
+const UPDATE_MANIFEST_URL = `${RELEASE_URL}/latest/download/aster-update.json`;
 const FONT_BASE64 = /*__FONT_DATA__*/ "";
 const ICON_BASE64 = /*__ICON_DATA__*/ "";
 const PREVIEW_BASE64 = /*__PREVIEW_DATA__*/ "";
@@ -26,6 +27,22 @@ async function fetchReleaseData(suffix) {
   }
 }
 
+async function fetchUpdateManifest() {
+  try {
+    const response = await fetch(UPDATE_MANIFEST_URL, {
+      redirect: "follow",
+      signal: AbortSignal.timeout(8000),
+      cache: "no-store",
+      headers: { "user-agent": "Aster-Launcher-Website" },
+    });
+    if (!response.ok) return null;
+
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
 function normalizeRelease(release) {
   if (!release || release.draft !== false || release.prerelease !== false) return null;
   const version = /^app-v(\d+\.\d+\.\d+)$/.exec(release.tag_name ?? "")?.[1];
@@ -40,8 +57,46 @@ function normalizeRelease(release) {
   };
 }
 
+function normalizeManifest(manifest) {
+  if (!manifest || typeof manifest.version !== "string") return null;
+  const version = /^\d+\.\d+\.\d+$/.test(manifest.version)
+    ? manifest.version
+    : null;
+  if (!version || typeof manifest.url !== "string") return null;
+
+  const tag = `app-v${version}`;
+  try {
+    const installerUrl = new URL(manifest.url);
+    const expectedPrefix = `/asterlauncher/Aster-Launcher/releases/download/${tag}/`;
+    if (
+      installerUrl.origin !== "https://github.com"
+      || installerUrl.username
+      || installerUrl.password
+      || !installerUrl.pathname.startsWith(expectedPrefix)
+    ) return null;
+
+    const filename = decodeURIComponent(installerUrl.pathname.split("/").at(-1) ?? "");
+    if (
+      !/[_-]x64-setup\.exe$/i.test(filename)
+      && !/[_-]x64(?:[_-][\w-]+)?\.msi$/i.test(filename)
+    ) return null;
+
+    return {
+      version,
+      tag,
+      title: String(manifest.name || `Aster Launcher ${version}`),
+      notes: String(manifest.description || "Release notes are available on GitHub."),
+      url: `${RELEASE_URL}/tag/${encodeURIComponent(tag)}`,
+      assets: [{ name: filename, browser_download_url: installerUrl.href }],
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function resolveLatestRelease() {
-  return normalizeRelease(await fetchReleaseData("/latest"));
+  return normalizeManifest(await fetchUpdateManifest())
+    ?? normalizeRelease(await fetchReleaseData("/latest"));
 }
 
 function resolveInstaller(release) {
@@ -523,18 +578,22 @@ function changelog(latest, history) {
   const releases = (Array.isArray(history) ? history : [])
     .map(normalizeRelease)
     .filter(Boolean);
+  const latestDetails = releases.find((release) => release.tag === latest?.tag);
+  const current = latest && latestDetails
+    ? { ...latest, title: latestDetails.title, notes: latestDetails.notes }
+    : latest;
   const ordered = [
-    ...(latest ? [latest] : []),
-    ...releases.filter((release) => release.tag !== latest?.tag),
+    ...(current ? [current] : []),
+    ...releases.filter((release) => release.tag !== current?.tag),
   ];
   return documentPage({
-    title: latest ? `VERSION ${latest.version}` : "VERSIONS",
+    title: current ? `VERSION ${current.version}` : "VERSIONS",
     subtitle: "Published Aster Launcher releases and updates",
     path: "/changelog",
-    action: `<a class="button green" href="/download">DOWNLOAD ${latest?.version ?? "LATEST"}</a>`,
+    action: `<a class="button green" href="/download">DOWNLOAD ${current?.version ?? "LATEST"}</a>`,
     body: ordered.length ? ordered.map((release) => `
       <section class="release">
-        <div class="release-label">${release.version}${release.tag === latest?.tag ? "<small>CURRENT</small>" : ""}</div>
+        <div class="release-label">${release.version}${release.tag === current?.tag ? "<small>CURRENT</small>" : ""}</div>
         <div>
           <h2>${escapeHtml(release.title)}</h2>
           <p class="release-notes">${escapeHtml(release.notes)}</p>

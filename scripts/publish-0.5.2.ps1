@@ -343,10 +343,18 @@ Invoke-Checked -Program $gh -Arguments @(
 $publishedManifest = Get-Content (
     Join-Path $verificationDirectory "aster-update.json"
 ) -Raw | ConvertFrom-Json
-$publishedInstallerUrl = (& $gh release view $tag `
+$publishedRelease = (& $gh release view $tag `
     --repo $repository `
-    --json assets `
-    --jq '.assets[] | select(.name | endswith("_x64-setup.exe")) | .url').Trim()
+    --json assets) | ConvertFrom-Json
+$publishedInstallers = @(
+    $publishedRelease.assets |
+        Where-Object { $_.name -match "_x64-setup\.exe$" }
+)
+$publishedInstallerUrl = if ($publishedInstallers.Count -eq 1) {
+    $publishedInstallers[0].url
+} else {
+    $null
+}
 Remove-Item -LiteralPath $verificationDirectory -Recurse -Force
 if (-not $publishedInstallerUrl -or $publishedManifest.url -ne $publishedInstallerUrl) {
     throw "The update manifest does not point to the published installer."
