@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getLauncherSettings } from "./settings";
+import { isTauriRuntime } from "./auth";
 
 export interface LaunchStarted {
   pid: number;
@@ -37,6 +38,9 @@ export function listMinecraftVersions() {
 export function listenToLaunchStatus(
   handler: (event: LaunchStatusEvent) => void,
 ): Promise<UnlistenFn> {
+  if (!isTauriRuntime()) {
+    return Promise.resolve(() => undefined);
+  }
   return listen<LaunchStatusEvent>("launch-status", ({ payload }) => {
     handler(payload);
   });

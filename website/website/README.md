@@ -1,98 +1,38 @@
-# vinext-starter
+# Aster Launcher website
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+Cloudflare Worker for the Aster Launcher download site at **https://asterlauncher.com**.
 
-## Prerequisites
+## Local development
 
-- Node.js `>=22.13.0`
+Requires Node.js 22 or newer. The active website uses native JavaScript and has no runtime package dependencies.
 
-## Quick Start
-
-```bash
-npm install
+```powershell
 npm run dev
+npm test
 npm run build
 ```
 
-This starter does not use `wrangler.jsonc`.
+The server prints its local URL. Edit `worker/index.js`; `scripts/build.mjs` bundles the existing font and images into `dist/server/index.js`. The old starter files under `app/` are not the active website entrypoint.
 
-## Included Shape
+## Releases
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+The homepage and `/download` read GitHub's current published release from `asterlauncher/Aster-Launcher/releases/latest`. The changelog reads published release notes. Drafts and GitHub prereleases are excluded. Publishing a new regular GitHub release with an x64 Windows installer updates the site's version and download without rebuilding the website.
 
-## Workspace Auth Headers
+The current release must contain an `*_x64-setup.exe` or an x64 MSI from this repository. Missing installers and GitHub outages return a temporary download error rather than silently delivering an older version. Locally built versions are not public releases until their release and installer have been published on GitHub.
 
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
+## Cloudflare setup
 
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
+`wrangler.jsonc` selects the connected Cloudflare account, the `aster-launcher` Worker and the custom domain `asterlauncher.com`. The website was published to this account and the domain attached on 10 September 2026. Cloudflare manages the domain's Worker DNS record and HTTPS certificate. HTTP redirects to HTTPS through the zone's `always_use_https` setting.
 
-Treat the full name as optional and fall back to email when it is absent:
+The Cloudflare plugin uses its own account connection and was used for this publication. Running Wrangler directly requires a separate Wrangler sign-in; the prior CLI session had expired:
 
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
+```powershell
+npm run cloudflare:login
+npm run cloudflare:whoami
+npm run cloudflare:check
+npm run deploy:cloudflare
 ```
 
-## Optional Dispatch-Owned ChatGPT Sign-In
+The deployment command publishes the website and binds the configured custom domain. Cloudflare manages its DNS and HTTPS certificate. Scripts request `wrangler@latest` so they use the current stable CLI. Check changes with `cloudflare:check` before deployment; changes to the Worker compatibility date should be tested too.
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
-
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+The existing `.openai/hosting.json` retains the site's Sites project identity. This publication runs in the user's own Cloudflare account, separately from that Sites project.

@@ -30,14 +30,14 @@ if (-not $SkipChecks) {
 }
 
 Write-Host "Checking Cloudflare sign-in..." -ForegroundColor Cyan
-& "npx.cmd" --yes wrangler whoami
+& "npx.cmd" --yes wrangler@latest whoami
 if ($LASTEXITCODE -ne 0) {
-    Invoke-Checked -Program "npx.cmd" -Arguments @("--yes", "wrangler", "login")
+    Invoke-Checked -Program "npx.cmd" -Arguments @("--yes", "wrangler@latest", "login")
 }
 
-Write-Host "Publishing Aster Launcher website 0.5.3..." -ForegroundColor Cyan
-Invoke-Checked -Program "npx.cmd" -Arguments @("--yes", "wrangler", "deploy")
+Write-Host "Publishing Aster Launcher website..." -ForegroundColor Cyan
+Invoke-Checked -Program "npx.cmd" -Arguments @("--yes", "wrangler@latest", "deploy")
 
 Write-Host ""
-Write-Host "Aster Launcher website 0.5.3 is live." -ForegroundColor Green
-Write-Host "https://aster-launcher.asterlauncher.workers.dev/"
+Write-Host "Aster Launcher website published." -ForegroundColor Green
+Write-Host "https://asterlauncher.com/"

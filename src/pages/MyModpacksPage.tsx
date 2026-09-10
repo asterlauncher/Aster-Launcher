@@ -13,52 +13,69 @@ import {
   Download,
   FileArchive,
   FolderOpen,
+  Gauge,
   Gamepad2,
   Globe2,
   Image,
   Layers3,
   ListChecks,
+  MapPin,
   MoreHorizontal,
   Mountain,
+  Navigation,
   PackageOpen,
   Palette,
   Pickaxe,
   Play,
   Plus,
+  Radio,
   RefreshCw,
   Search,
+  Send,
+  Server,
+  SlidersHorizontal,
+  Terminal,
   Settings,
   ShieldAlert,
   ShieldCheck,
   ShieldQuestion,
   Sparkles,
   Star,
+  Timer,
   Trash2,
   TreePine,
+  Users,
   X,
   Zap,
   type LucideIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createInstanceStructure,
+  defaultAsterClientSettings,
   exportModpack,
+  getAsterClientSettings,
   listInstanceContent,
   openInstanceContentFolder,
   openInstanceFolder,
   pickAndImportInstanceContent,
   pickAndImportModpack,
   pickAndSetInstanceIcon,
+  provisionAsterProfile,
   removeInstanceContent,
   scanInstanceMods,
+  setAsterClientSettings,
   setInstanceContentEnabled,
+  type AsterClientSettings,
   type InstanceContentFile,
   type InstanceContentSection,
   type InstanceSecurityScanResult,
 } from "../services/instances";
 import { useAppStore } from "../store/AppStore";
+import { RamSafetyWarning } from "../components/RamSafetyWarning";
 import type { ContentType } from "../services/content";
 import {
+  hasSharedModpackUpdate,
   readModpackLibrary,
   subscribeModpackLibrary,
   writeModpackLibrary,
@@ -66,11 +83,42 @@ import {
   type ModpackIcon,
   type ModpackStatus,
 } from "../services/modpackLibrary";
+import { isOfficialAsterProfile } from "../services/asterProfiles";
 import {
   launchInstance,
   listMinecraftVersions,
   listenToLaunchStatus,
 } from "../services/launcher";
+import {
+  defaultHostServerSettings,
+  getHostConsole,
+  getHostServerSettings,
+  getHostedWorldStatus,
+  listenToHostStatus,
+  openHostingTunnelSetup,
+  saveHostServerSettings,
+  sendHostConsoleCommand,
+  startHostedWorld,
+  stopHostedWorld,
+  type HostConsoleLine,
+  type HostServerSettings,
+  type HostedWorldStatus,
+} from "../services/hosting";
+import {
+  acquireSharedWorldHost,
+  findSharedWorldBinding,
+  heartbeatSharedWorldHost,
+  loadSharedWorlds,
+  publishSharedWorldRevision,
+  releaseSharedWorldHost,
+  type SharedWorld,
+  type SharedWorldBinding,
+} from "../services/sharedWorlds";
+import {
+  installSharedModpack,
+  syncSharedModpackUpdates,
+  type SharedModpack,
+} from "../services/sharedModpacks";
 
 type ModpackSort = "recent" | "name";
 type InstanceSection = InstanceContentSection;
@@ -91,6 +139,85 @@ interface SectionDefinition {
   label: string;
   icon: LucideIcon;
 }
+
+type InstanceManagerView = "content" | "aster-settings";
+type AsterSettingKey = keyof AsterClientSettings;
+
+interface AsterSettingDefinition {
+  id: AsterSettingKey;
+  label: string;
+  description: string;
+  icon: LucideIcon;
+}
+
+const asterSettingDefinitions: AsterSettingDefinition[] = [
+  {
+    id: "coordinates",
+    label: "Coordinates",
+    description: "LIVE • Show your current position while playing.",
+    icon: MapPin,
+  },
+  {
+    id: "fpsCounter",
+    label: "FPS Counter",
+    description: "LIVE • Display the current frame rate in the HUD.",
+    icon: Gauge,
+  },
+  {
+    id: "clock",
+    label: "Clock",
+    description: "LIVE • Keep your local time visible in game.",
+    icon: Timer,
+  },
+  {
+    id: "sprintStatus",
+    label: "Sprint Status",
+    description: "LIVE • Show when sprinting is currently active.",
+    icon: Zap,
+  },
+  {
+    id: "direction",
+    label: "Direction HUD",
+    description: "LIVE • Display the direction your player is facing.",
+    icon: Navigation,
+  },
+  {
+    id: "minimap",
+    label: "Xaero's Minimap",
+    description: "LIVE • Nearby terrain, entities and waypoints.",
+    icon: MapPin,
+  },
+  {
+    id: "worldMap",
+    label: "Xaero's World Map",
+    description: "LIVE • A full-screen map of explored terrain.",
+    icon: Globe2,
+  },
+  {
+    id: "zoom",
+    label: "Zoom",
+    description: "LIVE • A configurable smooth camera zoom.",
+    icon: Search,
+  },
+  {
+    id: "betterF3",
+    label: "Better Debug HUD",
+    description: "LIVE • A cleaner, customizable F3 screen.",
+    icon: ListChecks,
+  },
+  {
+    id: "appleSkin",
+    label: "Food Preview",
+    description: "LIVE • Shows food and saturation information.",
+    icon: Gauge,
+  },
+  {
+    id: "dynamicLights",
+    label: "Dynamic Lights",
+    description: "LIVE • Held light sources illuminate the world.",
+    icon: Zap,
+  },
+];
 
 const DISCOVERY_TAB_KEY = "aster.discovery-tab";
 const DISCOVERY_TARGET_KEY = "aster.discovery-target";
@@ -245,8 +372,116 @@ function sectionToDiscovery(section: InstanceSection): ContentType | null {
   return null;
 }
 
+function AsterInstanceSettings({
+  settings,
+  loading,
+  saving,
+  onChange,
+}: {
+  settings: AsterClientSettings;
+  loading: boolean;
+  saving: boolean;
+  onChange: (key: AsterSettingKey, enabled: boolean) => void;
+}) {
+  const [settingsQuery, setSettingsQuery] = useState("");
+  const normalizedQuery = settingsQuery.trim().toLowerCase();
+  const visibleSettings = asterSettingDefinitions.filter(
+    (definition) =>
+      !normalizedQuery ||
+      definition.label.toLowerCase().includes(normalizedQuery) ||
+      definition.description.toLowerCase().includes(normalizedQuery),
+  );
+
+  return (
+    <section className="aster-instance-settings">
+      <div className="aster-settings-search">
+        <Search size={16} />
+        <input
+          value={settingsQuery}
+          onChange={(event) => setSettingsQuery(event.target.value)}
+          placeholder="Search Aster settings..."
+          aria-label="Search Aster settings"
+        />
+        <span className={saving ? "is-saving" : ""}>
+          {loading ? "Loading..." : saving ? "Saving..." : "Saved"}
+        </span>
+      </div>
+
+      {loading ? (
+        <div className="aster-settings-loading">
+          <RefreshCw size={18} className="spin" />
+          Reading Aster Client settings...
+        </div>
+      ) : (
+        <div className="aster-settings-grid">
+          {visibleSettings.map((definition) => {
+            const Icon = definition.icon;
+            const enabled = settings[definition.id];
+            return (
+              <motion.button
+                layout
+                type="button"
+                role="switch"
+                aria-checked={enabled}
+                key={definition.id}
+                className={enabled ? "is-enabled" : ""}
+                onClick={() => onChange(definition.id, !enabled)}
+                whileTap={{ scale: 0.992 }}
+              >
+                <span className="aster-setting-icon">
+                  <Icon size={19} />
+                </span>
+                <span>
+                  <strong>{definition.label}</strong>
+                  <small>{definition.description}</small>
+                </span>
+                <i aria-hidden="true">
+                  <b />
+                </i>
+              </motion.button>
+            );
+          })}
+          {visibleSettings.length === 0 && (
+            <div className="aster-settings-empty">
+              <Search size={22} />
+              <strong>No setting found</strong>
+              <span>Try another search.</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      <footer>
+        <span>
+          <ShieldCheck size={15} />
+          Every Aster setting is applied live while Minecraft is running.
+        </span>
+        <span className="aster-module-credits">
+          Maps by Xaero96:
+          <a
+            href="https://modrinth.com/mod/xaeros-minimap"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Minimap
+          </a>
+          <a
+            href="https://modrinth.com/mod/xaeros-world-map"
+            target="_blank"
+            rel="noreferrer"
+          >
+            World Map
+          </a>
+        </span>
+      </footer>
+    </section>
+  );
+}
+
 export function MyModpacksPage() {
   const {
+    asterAccount,
+    asterLoggedIn,
     dismissNotification,
     loggedIn,
     notify,
@@ -257,6 +492,7 @@ export function MyModpacksPage() {
   } = useAppStore();
   const [library, setLibrary] =
     useState<InstalledModpack[]>(readModpackLibrary);
+  const [sharedModpacks, setSharedModpacks] = useState<SharedModpack[]>([]);
   const [contentFiles, setContentFiles] = useState<InstanceContentFile[]>([]);
   const [contentLoading, setContentLoading] = useState(false);
   const [query, setQuery] = useState("");
@@ -265,11 +501,29 @@ export function MyModpacksPage() {
     useState(fallbackMinecraftVersions);
   const [activeInstanceId, setActiveInstanceId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<InstanceSection>("mods");
+  const [managerView, setManagerView] =
+    useState<InstanceManagerView>("content");
+  const [asterSettings, setAsterSettingsState] =
+    useState<AsterClientSettings>(defaultAsterClientSettings);
+  const [asterSettingsLoading, setAsterSettingsLoading] = useState(false);
+  const [asterSettingsSaving, setAsterSettingsSaving] = useState(false);
+  const asterSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const asterSaveVersion = useRef(0);
   const [contentQuery, setContentQuery] = useState("");
   const [selectedContent, setSelectedContent] = useState<string[]>([]);
   const [contentMenuId, setContentMenuId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [hostDialogOpen, setHostDialogOpen] = useState(false);
+  const [hostStatus, setHostStatus] = useState<HostedWorldStatus | null>(null);
+  const [hostBusy, setHostBusy] = useState(false);
+  const [hostDetail, setHostDetail] = useState("");
+  const activeSharedHost = useRef<{
+    world: SharedWorld;
+    binding: SharedWorldBinding;
+    leaseToken: string;
+    heartbeat: ReturnType<typeof setInterval>;
+  } | null>(null);
   const [securityScan, setSecurityScan] = useState<SecurityScanState>({ phase: "idle" });
   const [securityBlocks, setSecurityBlocks] = useState<string[]>(readSecurityBlocks);
   const [editorId, setEditorId] = useState<string | null | undefined>(undefined);
@@ -316,6 +570,106 @@ export function MyModpacksPage() {
     [],
   );
 
+  useEffect(() => {
+    if (!asterLoggedIn || !asterAccount) {
+      setSharedModpacks([]);
+      return;
+    }
+    let disposed = false;
+    const sync = () => {
+      void syncSharedModpackUpdates(asterAccount)
+        .then((shares) => {
+          if (disposed) return;
+          setSharedModpacks(shares);
+          setLibrary(readModpackLibrary());
+        })
+        .catch(() => {
+          // Social can be offline; local instances remain fully usable.
+        });
+    };
+    const syncOnFocus = () => sync();
+    sync();
+    const interval = window.setInterval(sync, 60_000);
+    window.addEventListener("focus", syncOnFocus);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", syncOnFocus);
+    };
+  }, [asterAccount, asterLoggedIn]);
+
+  const finalizeSharedWorldHost = useCallback(async () => {
+    const active = activeSharedHost.current;
+    if (!active || !asterAccount) return;
+    activeSharedHost.current = null;
+    clearInterval(active.heartbeat);
+    try {
+      const settings = await getHostServerSettings(
+        active.binding.instanceId,
+        active.binding.worldName,
+      );
+      const revision = await publishSharedWorldRevision(
+        asterAccount,
+        active.world,
+        active.binding,
+        settings as unknown as Record<string, unknown>,
+      );
+      notify({
+        title: "Shared World synchronized",
+        message: `${active.world.name} revision ${revision} is ready for your friends.`,
+        tone: "success",
+      });
+    } catch (error) {
+      notify({
+        title: "Shared World sync failed",
+        message:
+          error instanceof Error
+            ? error.message
+            : "The local save is safe, but its cloud revision was not updated.",
+        tone: "error",
+      });
+    } finally {
+      await releaseSharedWorldHost(
+        asterAccount,
+        active.world.id,
+        active.leaseToken,
+      ).catch(() => undefined);
+    }
+  }, [asterAccount, notify]);
+
+  useEffect(() => {
+    let disposed = false;
+    let stopListening: (() => void) | undefined;
+    void getHostedWorldStatus().then((status) => {
+      if (!disposed) setHostStatus(status);
+    });
+    void listenToHostStatus((event) => {
+      if (disposed) return;
+      setHostDetail(event.detail);
+      if (event.status === "stopped") {
+        setHostStatus(null);
+        setHostBusy(false);
+        void finalizeSharedWorldHost();
+        notify({
+          title:
+            event.exitCode === null || event.exitCode === 0
+              ? "Aster Host stopped"
+              : "Aster Host stopped unexpectedly",
+          message: event.detail,
+          tone:
+            event.exitCode === null || event.exitCode === 0 ? "info" : "error",
+        });
+      }
+    }).then((unlisten) => {
+      if (disposed) unlisten();
+      else stopListening = unlisten;
+    });
+    return () => {
+      disposed = true;
+      stopListening?.();
+    };
+  }, [finalizeSharedWorldHost, notify]);
+
   const refreshContentFiles = useCallback(
     async (instanceId: string, announce = false) => {
       setContentLoading(true);
@@ -343,6 +697,8 @@ export function MyModpacksPage() {
   );
 
   useEffect(() => {
+    setManagerView("content");
+    setAsterSettingsState(defaultAsterClientSettings);
     if (!activeInstanceId) {
       setContentFiles([]);
       setSecurityScan({ phase: "idle" });
@@ -369,6 +725,55 @@ export function MyModpacksPage() {
 
   const activeInstance =
     library.find((item) => item.id === activeInstanceId) ?? null;
+
+  const openAsterSettings = () => {
+    if (!activeInstance || !isOfficialAsterProfile(activeInstance)) return;
+    setManagerView("aster-settings");
+    setAsterSettingsLoading(true);
+    void getAsterClientSettings(activeInstance.id)
+      .then(setAsterSettingsState)
+      .catch((error: unknown) => {
+        notify({
+          title: "Aster settings unavailable",
+          message: error instanceof Error ? error.message : String(error),
+          tone: "error",
+        });
+      })
+      .finally(() => setAsterSettingsLoading(false));
+  };
+
+  const persistAsterSettings = (
+    instanceId: string,
+    settings: AsterClientSettings,
+  ) => {
+    const saveVersion = ++asterSaveVersion.current;
+    setAsterSettingsSaving(true);
+    asterSaveQueue.current = asterSaveQueue.current
+      .catch(() => undefined)
+      .then(() => setAsterClientSettings(instanceId, settings))
+      .catch((error: unknown) => {
+        notify({
+          title: "Aster settings could not be saved",
+          message: error instanceof Error ? error.message : String(error),
+          tone: "error",
+        });
+      })
+      .finally(() => {
+        if (asterSaveVersion.current === saveVersion) {
+          setAsterSettingsSaving(false);
+        }
+      });
+  };
+
+  const changeAsterSetting = (key: AsterSettingKey, enabled: boolean) => {
+    if (!activeInstance || !isOfficialAsterProfile(activeInstance)) return;
+    setAsterSettingsState((current) => {
+      const next = { ...current, [key]: enabled };
+      persistAsterSettings(activeInstance.id, next);
+      return next;
+    });
+  };
+
   const activeItems = activeInstance ? contentFiles : [];
   const visibleContent = activeItems.filter(
     (item) =>
@@ -386,6 +791,69 @@ export function MyModpacksPage() {
     setLibrary((current) =>
       current.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     );
+  };
+
+  const updateSharedModpack = async (item: InstalledModpack) => {
+    if (!asterAccount || !item.sharedModpackId) return;
+    const share = sharedModpacks.find(
+      (candidate) =>
+        candidate.id === item.sharedModpackId &&
+        candidate.status === "accepted",
+    );
+    if (!share) {
+      notify({
+        title: "Shared update unavailable",
+        message: "Open Friends > Shared Modpacks and refresh the invitation first.",
+        tone: "warning",
+      });
+      return;
+    }
+    const downloadId = `shared-pack-${share.id}-${Date.now()}`;
+    setDownloads((current) => [
+      {
+        id: downloadId,
+        title: share.name,
+        detail: `Installing owner revision ${share.currentRevision}`,
+        status: "downloading",
+        progress: 1,
+      },
+      ...current,
+    ]);
+    try {
+      await installSharedModpack(asterAccount, share, downloadId);
+      setDownloads((current) =>
+        current.map((download) =>
+          download.id === downloadId
+            ? {
+                ...download,
+                detail: `Revision ${share.currentRevision} installed`,
+                status: "complete",
+                progress: 100,
+              }
+            : download,
+        ),
+      );
+      setLibrary(readModpackLibrary());
+      notify({
+        title: `${share.name} updated`,
+        message: `Owner revision ${share.currentRevision} is ready to play. Your worlds and local settings were preserved.`,
+        tone: "success",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setDownloads((current) =>
+        current.map((download) =>
+          download.id === downloadId
+            ? { ...download, detail: message, status: "failed" }
+            : download,
+        ),
+      );
+      notify({
+        title: "Modpack update failed",
+        message,
+        tone: "error",
+      });
+    }
   };
 
   useEffect(() => {
@@ -509,6 +977,20 @@ export function MyModpacksPage() {
     ]);
 
     try {
+      if (isOfficialAsterProfile(item)) {
+        setDownloads((current) =>
+          current.map((download) =>
+            download.id === downloadId
+              ? {
+                  ...download,
+                  detail: "Preparing protected performance and shader components",
+                  progress: 2,
+                }
+              : download,
+          ),
+        );
+        await provisionAsterProfile(item.id, downloadId);
+      }
       const started = await launchInstance(item.id, item.version, item.loader);
       patchModpack(item.id, { status: "running", lastPlayed: "Now" });
       notify({
@@ -549,6 +1031,14 @@ export function MyModpacksPage() {
   };
 
   const openEdit = (item: InstalledModpack) => {
+    if (isOfficialAsterProfile(item)) {
+      notify({
+        title: "Official Aster profile",
+        message: "Aster 1.20.1 keeps its Minecraft version and loader locked so the tested system stack stays compatible.",
+        tone: "info",
+      });
+      return;
+    }
     setDraft({
       name: item.name,
       version: item.version,
@@ -690,6 +1180,8 @@ export function MyModpacksPage() {
       lastPlayed: "Never played",
       status: "ready",
       favorite: false,
+      official: false,
+      systemProfile: undefined,
     };
     setLibrary((current) => [copy, ...current]);
     void createInstanceStructure(copy.id);
@@ -721,6 +1213,7 @@ export function MyModpacksPage() {
         gameVersion: activeInstance?.version,
         loader: activeInstance?.loader,
         contentType,
+        systemProfile: activeInstance?.systemProfile,
       }),
     );
     setPage("mods");
@@ -847,6 +1340,131 @@ export function MyModpacksPage() {
       .finally(() => setExporting(false));
   };
 
+  const startHosting = async (options: {
+    worldName: string;
+    port: number;
+    maxPlayers: number;
+    memoryGb: number;
+    acceptedEula: boolean;
+  }) => {
+    if (!activeInstance || hostBusy) return;
+    setHostBusy(true);
+    setHostDetail("Preparing a private server on this PC...");
+    let preparedSharedHost:
+      | {
+          world: SharedWorld;
+          binding: SharedWorldBinding;
+          leaseToken: string;
+          heartbeat: ReturnType<typeof setInterval>;
+        }
+      | undefined;
+    try {
+      const binding = findSharedWorldBinding(
+        activeInstance.id,
+        options.worldName,
+      );
+      if (binding) {
+        if (!asterAccount) {
+          throw new Error(
+            "Sign in to Aster before hosting a Shared World.",
+          );
+        }
+        const sharedWorld = (await loadSharedWorlds(asterAccount)).find(
+          (world) => world.id === binding.worldId,
+        );
+        if (!sharedWorld) {
+          throw new Error(
+            "This Shared World is no longer available to your account.",
+          );
+        }
+        if (!["owner", "host", "manage"].includes(sharedWorld.accessLevel)) {
+          throw new Error(
+            "The owner gave you play access, but not permission to host this world.",
+          );
+        }
+        if (
+          sharedWorld.latestRevision &&
+          binding.revision < sharedWorld.latestRevision.number
+        ) {
+          throw new Error(
+            `Revision ${sharedWorld.latestRevision.number} is newer. Open Friends → Shared Worlds and choose Get latest before hosting.`,
+          );
+        }
+        const lease = await acquireSharedWorldHost(asterAccount, sharedWorld.id);
+        const heartbeat = setInterval(() => {
+          void heartbeatSharedWorldHost(
+            asterAccount,
+            sharedWorld.id,
+            lease.leaseToken,
+          ).catch((error: unknown) => {
+            notify({
+              title: "Shared World host lock lost",
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Stop the server before another friend hosts this world.",
+              tone: "error",
+            });
+          });
+        }, 45_000);
+        preparedSharedHost = {
+          world: sharedWorld,
+          binding,
+          leaseToken: lease.leaseToken,
+          heartbeat,
+        };
+        activeSharedHost.current = preparedSharedHost;
+      }
+      const status = await startHostedWorld({
+        instanceId: activeInstance.id,
+        gameVersion: activeInstance.version,
+        loader: activeInstance.loader,
+        ...options,
+      });
+      setHostStatus(status);
+      setHostDetail("The world is running. LAN friends can join now.");
+      notify({
+        title: "Aster Host is running",
+        message: `${options.worldName} is available at ${status.lanAddress}.`,
+        tone: "success",
+      });
+    } catch (error) {
+      if (preparedSharedHost && asterAccount) {
+        clearInterval(preparedSharedHost.heartbeat);
+        activeSharedHost.current = null;
+        await releaseSharedWorldHost(
+          asterAccount,
+          preparedSharedHost.world.id,
+          preparedSharedHost.leaseToken,
+        ).catch(() => undefined);
+      }
+      setHostDetail("");
+      notify({
+        title: "World hosting failed",
+        message: error instanceof Error ? error.message : String(error),
+        tone: "error",
+      });
+    } finally {
+      setHostBusy(false);
+    }
+  };
+
+  const stopHosting = async () => {
+    if (!activeInstance || hostBusy) return;
+    setHostBusy(true);
+    try {
+      await stopHostedWorld(activeInstance.id);
+      setHostDetail("Stopping the hosted world safely...");
+    } catch (error) {
+      setHostBusy(false);
+      notify({
+        title: "Aster Host could not stop",
+        message: error instanceof Error ? error.message : String(error),
+        tone: "error",
+      });
+    }
+  };
+
   const changeContentState = (
     items: InstanceContentFile[],
     enabled: boolean,
@@ -880,6 +1498,15 @@ export function MyModpacksPage() {
   const confirmDelete = () => {
     if (!deleteId) return;
     const item = library.find((candidate) => candidate.id === deleteId);
+    if (isOfficialAsterProfile(item)) {
+      setDeleteId(null);
+      notify({
+        title: "Official Aster profile",
+        message: "Aster 1.20.1 is part of the launcher and cannot be removed.",
+        tone: "warning",
+      });
+      return;
+    }
     setLibrary((current) => current.filter((candidate) => candidate.id !== deleteId));
     setSecurityBlocks((current) => current.filter((id) => id !== deleteId));
     if (activeInstanceId === deleteId) setActiveInstanceId(null);
@@ -916,6 +1543,7 @@ export function MyModpacksPage() {
   };
 
   const setSection = (section: InstanceSection) => {
+    setManagerView("content");
     setActiveSection(section);
     setContentQuery("");
     setSelectedContent([]);
@@ -934,6 +1562,16 @@ export function MyModpacksPage() {
         transition={{ duration: 0.18, ease: "easeOut" }}
       >
         <main className="instance-manager-main">
+          {managerView === "aster-settings" &&
+          isOfficialAsterProfile(activeInstance) ? (
+            <AsterInstanceSettings
+              settings={asterSettings}
+              loading={asterSettingsLoading}
+              saving={asterSettingsSaving}
+              onChange={changeAsterSetting}
+            />
+          ) : (
+            <>
           <header className="instance-content-toolbar">
             <label>
               <Search size={14} />
@@ -1196,6 +1834,8 @@ export function MyModpacksPage() {
               </div>
             )}
           </section>
+            </>
+          )}
         </main>
 
         <aside className="instance-manager-sidebar">
@@ -1239,6 +1879,9 @@ export function MyModpacksPage() {
             <div>
               <h1>{activeInstance.name}</h1>
               <p>{activeInstance.version} · {activeInstance.loader}</p>
+              {isOfficialAsterProfile(activeInstance) && (
+                <small className="aster-profile-badge">ASTER CLIENT</small>
+              )}
             </div>
           </div>
 
@@ -1249,7 +1892,13 @@ export function MyModpacksPage() {
             </button>
           </div>
 
-          <button type="button" className="instance-content-root active">
+          <button
+            type="button"
+            className={`instance-content-root ${
+              managerView === "content" ? "active" : ""
+            }`}
+            onClick={() => setManagerView("content")}
+          >
             <Layers3 size={14} />
             Content
           </button>
@@ -1262,7 +1911,11 @@ export function MyModpacksPage() {
                 <button
                   type="button"
                   key={section.id}
-                  className={activeSection === section.id ? "active" : ""}
+                  className={
+                    managerView === "content" && activeSection === section.id
+                      ? "active"
+                      : ""
+                  }
                   onClick={() => setSection(section.id)}
                 >
                   <i />
@@ -1274,6 +1927,19 @@ export function MyModpacksPage() {
             })}
           </nav>
 
+          {isOfficialAsterProfile(activeInstance) && (
+            <button
+              type="button"
+              className={`instance-sidebar-link aster-settings-link ${
+                managerView === "aster-settings" ? "active" : ""
+              }`}
+              onClick={openAsterSettings}
+            >
+              <Sparkles size={14} />
+              <span>Aster Settings</span>
+            </button>
+          )}
+
           <div className="instance-sidebar-separator" />
 
           {sections.slice(4).map((section) => {
@@ -1284,7 +1950,9 @@ export function MyModpacksPage() {
                 type="button"
                 key={section.id}
                 className={`instance-sidebar-link ${
-                  activeSection === section.id ? "active" : ""
+                  managerView === "content" && activeSection === section.id
+                    ? "active"
+                    : ""
                 }`}
                 onClick={() => setSection(section.id)}
               >
@@ -1294,6 +1962,22 @@ export function MyModpacksPage() {
               </button>
             );
           })}
+
+          <button
+            type="button"
+            className={`instance-sidebar-link aster-host-link ${
+              hostStatus?.instanceId === activeInstance.id ? "is-running" : ""
+            }`}
+            onClick={() => setHostDialogOpen(true)}
+          >
+            <Radio size={14} />
+            <span>
+              {hostStatus?.instanceId === activeInstance.id
+                ? "Hosting world"
+                : "Host a world"}
+            </span>
+            {hostStatus?.instanceId === activeInstance.id && <small>LIVE</small>}
+          </button>
 
           <button
             type="button"
@@ -1311,7 +1995,17 @@ export function MyModpacksPage() {
               <Copy size={12} />
               Duplicate
             </button>
-            <button type="button" className="danger" onClick={() => setDeleteId(activeInstance.id)}>
+            <button
+              type="button"
+              className="danger"
+              onClick={() => setDeleteId(activeInstance.id)}
+              disabled={isOfficialAsterProfile(activeInstance)}
+              title={
+                isOfficialAsterProfile(activeInstance)
+                  ? "Official Aster profiles cannot be removed"
+                  : "Remove instance"
+              }
+            >
               <Trash2 size={12} />
               Delete
             </button>
@@ -1375,6 +2069,39 @@ export function MyModpacksPage() {
           onCancel={() => setDeleteId(null)}
           onConfirm={confirmDelete}
         />
+
+        <AsterHostDialog
+          open={hostDialogOpen}
+          instanceId={activeInstance.id}
+          instanceName={activeInstance.name}
+          loader={activeInstance.loader}
+          worlds={activeItems.filter((item) => item.kind === "worlds")}
+          status={hostStatus}
+          busy={hostBusy}
+          detail={hostDetail}
+          exporting={exporting}
+          onClose={() => setHostDialogOpen(false)}
+          onStart={startHosting}
+          onStop={stopHosting}
+          onExport={exportActiveModpack}
+          onOpenTunnel={() => {
+            void openHostingTunnelSetup().catch((error: unknown) => {
+              notify({
+                title: "Tunnel setup unavailable",
+                message: error instanceof Error ? error.message : String(error),
+                tone: "error",
+              });
+            });
+          }}
+          onCopy={(value) => {
+            void navigator.clipboard.writeText(value);
+            notify({
+              title: "Server address copied",
+              message: value,
+              tone: "success",
+            });
+          }}
+        />
       </motion.div>
     );
   }
@@ -1424,6 +2151,7 @@ export function MyModpacksPage() {
         <AnimatePresence initial={false} mode="popLayout">
           {modpacks.map((item) => {
             const Icon = iconMap[item.icon] ?? Boxes;
+            const sharedUpdate = hasSharedModpackUpdate(item);
             return (
               <motion.article
                 layout
@@ -1431,7 +2159,7 @@ export function MyModpacksPage() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.98, y: -4 }}
                 transition={{ duration: 0.17, ease: [0.22, 1, 0.36, 1] }}
-                className="modpack-entry"
+                className={`modpack-entry ${sharedUpdate ? "has-shared-update" : ""}`}
                 key={item.id}
                 role="button"
                 tabIndex={0}
@@ -1452,7 +2180,12 @@ export function MyModpacksPage() {
                   )}
                 </div>
                 <div className="modpack-entry-copy">
-                  <h2>{item.name}</h2>
+                  <h2>
+                    {item.name}
+                    {isOfficialAsterProfile(item) && (
+                      <span className="aster-profile-badge">ASTER</span>
+                    )}
+                  </h2>
                   <p>
                     <span>{item.version}</span>
                     <i />
@@ -1464,9 +2197,25 @@ export function MyModpacksPage() {
                     <StatusIcon status={item.status} />
                     {statusCopy[item.status]}
                     <b>·</b>
-                    <span>Open to manage content</span>
+                    <span>
+                      {isOfficialAsterProfile(item)
+                        ? "Protected performance build"
+                        : "Open to manage content"}
+                    </span>
                   </small>
                 </div>
+                {sharedUpdate && (
+                  <button
+                    type="button"
+                    className="modpack-shared-update"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void updateSharedModpack(item);
+                    }}
+                  >
+                    <Download size={11} /> Update
+                  </button>
+                )}
                 <div className="modpack-quick-actions">
                   <button
                     type="button"
@@ -1532,6 +2281,686 @@ export function MyModpacksPage() {
         onConfirm={confirmDelete}
       />
     </div>
+  );
+}
+
+interface AsterHostDialogProps {
+  open: boolean;
+  instanceId: string;
+  instanceName: string;
+  loader: string;
+  worlds: InstanceContentFile[];
+  status: HostedWorldStatus | null;
+  busy: boolean;
+  detail: string;
+  exporting: boolean;
+  onClose: () => void;
+  onStart: (options: {
+    worldName: string;
+    port: number;
+    maxPlayers: number;
+    memoryGb: number;
+    acceptedEula: boolean;
+  }) => void;
+  onStop: () => void;
+  onExport: () => void;
+  onOpenTunnel: () => void;
+  onCopy: (value: string) => void;
+}
+
+type AsterHostView = "overview" | "console" | "settings";
+
+function AsterHostDialog({
+  open,
+  instanceId,
+  instanceName,
+  loader,
+  worlds,
+  status,
+  busy,
+  detail,
+  exporting,
+  onClose,
+  onStart,
+  onStop,
+  onExport,
+  onOpenTunnel,
+  onCopy,
+}: AsterHostDialogProps) {
+  const [worldName, setWorldName] = useState("");
+  const [acceptedEula, setAcceptedEula] = useState(false);
+  const [view, setView] = useState<AsterHostView>("overview");
+  const [settings, setSettings] = useState<HostServerSettings>(
+    defaultHostServerSettings,
+  );
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState("");
+  const [consoleLines, setConsoleLines] = useState<HostConsoleLine[]>([]);
+  const [consoleCursor, setConsoleCursor] = useState(0);
+  const [consoleCommand, setConsoleCommand] = useState("");
+  const [consoleError, setConsoleError] = useState("");
+  const consoleEndRef = useRef<HTMLDivElement | null>(null);
+  const ownSession = status?.instanceId === instanceId;
+  const supported = loader === "Fabric" || loader === "Vanilla";
+  const selectedWorld = ownSession && status ? status.worldName : worldName;
+
+  useEffect(() => {
+    if (!open) return;
+    if (ownSession && status) {
+      setWorldName(status.worldName);
+    } else if (!worlds.some((world) => world.fileName === worldName)) {
+      setWorldName(worlds[0]?.fileName ?? "");
+    }
+  }, [open, ownSession, status, worldName, worlds]);
+
+  useEffect(() => {
+    if (!open || !selectedWorld) return;
+    let disposed = false;
+    setSettingsLoading(true);
+    setSettingsMessage("");
+    void getHostServerSettings(instanceId, selectedWorld)
+      .then((saved) => {
+        if (!disposed) setSettings(saved);
+      })
+      .catch((error: unknown) => {
+        if (!disposed) {
+          setSettings(defaultHostServerSettings);
+          setSettingsMessage(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      })
+      .finally(() => {
+        if (!disposed) setSettingsLoading(false);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [instanceId, open, selectedWorld]);
+
+  useEffect(() => {
+    if (!open || !ownSession) {
+      setConsoleLines([]);
+      setConsoleCursor(0);
+      return;
+    }
+    let disposed = false;
+    let cursor = 0;
+    const poll = async () => {
+      try {
+        const snapshot = await getHostConsole(instanceId, cursor);
+        if (disposed) return;
+        cursor = snapshot.nextCursor;
+        setConsoleCursor(cursor);
+        if (snapshot.lines.length > 0) {
+          setConsoleLines((current) =>
+            [...current, ...snapshot.lines].slice(-600),
+          );
+        }
+        setConsoleError("");
+      } catch (error) {
+        if (!disposed) {
+          setConsoleError(error instanceof Error ? error.message : String(error));
+        }
+      }
+    };
+    void poll();
+    const interval = window.setInterval(() => void poll(), 900);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, [instanceId, open, ownSession]);
+
+  useEffect(() => {
+    if (view === "console") {
+      consoleEndRef.current?.scrollIntoView({ block: "end" });
+    }
+  }, [consoleCursor, view]);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose, open]);
+
+  const updateSetting = <Key extends keyof HostServerSettings>(
+    key: Key,
+    value: HostServerSettings[Key],
+  ) => {
+    setSettings((current) => ({ ...current, [key]: value }));
+    setSettingsMessage("");
+  };
+
+  const persistSettings = async () => {
+    if (!selectedWorld || settingsSaving) return null;
+    setSettingsSaving(true);
+    setSettingsMessage("");
+    try {
+      const result = await saveHostServerSettings(
+        instanceId,
+        selectedWorld,
+        settings,
+      );
+      setSettings(result.settings);
+      setSettingsMessage(
+        result.restartRequired
+          ? "Saved for this world. Restart the host to apply the changes."
+          : "Saved for this world.",
+      );
+      return result.settings;
+    } catch (error) {
+      setSettingsMessage(error instanceof Error ? error.message : String(error));
+      return null;
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
+  const startWithSettings = async () => {
+    const saved = await persistSettings();
+    if (!saved) return;
+    onStart({
+      worldName,
+      port: saved.port,
+      maxPlayers: saved.maxPlayers,
+      memoryGb: saved.memoryGb,
+      acceptedEula,
+    });
+  };
+
+  const submitConsoleCommand = async () => {
+    const command = consoleCommand.trim();
+    if (!command) return;
+    setConsoleCommand("");
+    try {
+      await sendHostConsoleCommand(instanceId, command);
+      setConsoleError("");
+    } catch (error) {
+      setConsoleError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="modpack-dialog-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onMouseDown={(event) => {
+            if (event.currentTarget === event.target) onClose();
+          }}
+        >
+          <motion.section
+            className="aster-host-dialog"
+            initial={{ opacity: 0, scale: 0.97, y: 12 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.985, y: 6 }}
+            transition={{ duration: 0.17 }}
+          >
+            <button
+              type="button"
+              className="modpack-dialog-close aster-host-close"
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={onClose}
+              aria-label="Close Aster Host"
+            >
+              <X size={15} />
+            </button>
+            <header>
+              <span className={ownSession ? "is-live" : ""}>
+                <Server size={20} />
+              </span>
+              <div>
+                <small>ASTER HOST</small>
+                <h2>{ownSession ? "Your world is live" : "Play together from your PC"}</h2>
+                <p>{instanceName} · {loader}</p>
+              </div>
+              {ownSession && <b className="aster-host-live"><i /> LIVE</b>}
+            </header>
+
+            <nav className="aster-host-tabs" aria-label="Aster Host panels">
+              <button
+                type="button"
+                className={view === "overview" ? "active" : ""}
+                onClick={() => setView("overview")}
+              >
+                <Server size={13} />
+                Overview
+              </button>
+              <button
+                type="button"
+                className={view === "console" ? "active" : ""}
+                onClick={() => setView("console")}
+                disabled={!ownSession}
+              >
+                <Terminal size={13} />
+                Console
+              </button>
+              <button
+                type="button"
+                className={view === "settings" ? "active" : ""}
+                onClick={() => setView("settings")}
+                disabled={!selectedWorld}
+              >
+                <SlidersHorizontal size={13} />
+                Settings
+              </button>
+            </nav>
+
+            {view === "overview" && ownSession && status && (
+              <div className="aster-host-running">
+                <div className="aster-host-address">
+                  <Radio size={18} />
+                  <span>
+                    <small>LOCAL SERVER ADDRESS</small>
+                    <strong>{status.lanAddress}</strong>
+                  </span>
+                  <button type="button" onClick={() => onCopy(status.lanAddress)}>
+                    <Copy size={13} />
+                    Copy
+                  </button>
+                </div>
+                <div className="aster-host-facts">
+                  <span><small>WORLD</small><b>{status.worldName}</b></span>
+                  <span><small>PORT</small><b>{status.port}</b></span>
+                  <span><small>PROCESS</small><b>#{status.pid}</b></span>
+                </div>
+                <p>
+                  This is a real dedicated Minecraft server on your computer.
+                  Keep Aster open while friends are playing.
+                </p>
+                <div className="aster-host-actions">
+                  <button type="button" onClick={onOpenTunnel}>
+                    <Globe2 size={14} />
+                    Internet access
+                  </button>
+                  <button type="button" onClick={onExport} disabled={exporting}>
+                    <Archive size={14} />
+                    {exporting ? "Exporting..." : "Share modpack"}
+                  </button>
+                  <button
+                    type="button"
+                    className="danger"
+                    onClick={onStop}
+                    disabled={busy}
+                  >
+                    <X size={14} />
+                    {busy ? "Stopping..." : "Stop hosting"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {view === "overview" && !ownSession && (
+              <div className="aster-host-setup">
+                <div className="aster-host-callout">
+                  <Users size={18} />
+                  <div>
+                    <strong>No paid server required</strong>
+                    <span>
+                      Aster starts a hidden dedicated server using this instance
+                      and its enabled mods.
+                    </span>
+                  </div>
+                </div>
+
+                {!supported && (
+                  <div className="aster-host-warning">
+                    <AlertTriangle size={16} />
+                    Aster Host currently supports Fabric and Vanilla. Forge
+                    hosting needs a separate server installer.
+                  </div>
+                )}
+
+                {status && !ownSession && (
+                  <div className="aster-host-warning">
+                    <Radio size={16} />
+                    Another instance is already hosting {status.worldName}.
+                  </div>
+                )}
+
+                <div className="aster-host-fields">
+                  <label className="wide">
+                    <span>World</span>
+                    <select
+                      value={worldName}
+                      onChange={(event) => setWorldName(event.target.value)}
+                    >
+                      {worlds.map((world) => (
+                        <option value={world.fileName} key={world.id}>
+                          {world.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    <span>Player slots</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={100}
+                      value={settings.maxPlayers}
+                      onChange={(event) =>
+                        updateSetting("maxPlayers", event.currentTarget.valueAsNumber)
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>Server RAM</span>
+                    <select
+                      value={settings.memoryGb}
+                      onChange={(event) =>
+                        updateSetting("memoryGb", Number(event.target.value))
+                      }
+                    >
+                      {[2, 3, 4, 6, 8, 12, 16].map((amount) => (
+                        <option value={amount} key={amount}>
+                          {amount} GB
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <RamSafetyWarning allocatedGb={settings.memoryGb} />
+                  <label>
+                    <span>Local port</span>
+                    <input
+                      type="number"
+                      min={1024}
+                      max={65535}
+                      value={settings.port}
+                      onChange={(event) =>
+                        updateSetting("port", event.currentTarget.valueAsNumber)
+                      }
+                    />
+                  </label>
+                </div>
+
+                {worlds.length === 0 && (
+                  <div className="aster-host-empty">
+                    <Globe2 size={18} />
+                    Add or create a world in this instance before hosting.
+                  </div>
+                )}
+
+                <label className="aster-host-eula">
+                  <input
+                    type="checkbox"
+                    checked={acceptedEula}
+                    onChange={(event) => setAcceptedEula(event.target.checked)}
+                  />
+                  <span>
+                    I accept the{" "}
+                    <a
+                      href="https://aka.ms/MinecraftEULA"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Minecraft EULA
+                    </a>{" "}
+                    for this local server.
+                  </span>
+                </label>
+
+                <footer className="aster-host-footer">
+                  <span>{detail || "The first start downloads the official server runtime."}</span>
+                  <button type="button" onClick={onClose} disabled={busy}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={
+                      busy ||
+                      !supported ||
+                      Boolean(status) ||
+                      !worldName ||
+                      !acceptedEula ||
+                      !Number.isFinite(settings.port) ||
+                      !Number.isFinite(settings.maxPlayers) ||
+                      settingsLoading ||
+                      settingsSaving
+                    }
+                    onClick={() => void startWithSettings()}
+                  >
+                    {busy ? (
+                      <RefreshCw size={14} className="spin" />
+                    ) : (
+                      <Play size={14} fill="currentColor" />
+                    )}
+                    {busy ? "Preparing..." : "Host world"}
+                  </button>
+                </footer>
+              </div>
+            )}
+
+            {view === "console" && (
+              <div className="aster-host-console-panel">
+                <div className="aster-host-console">
+                  {consoleLines.length === 0 ? (
+                    <div className="aster-host-console-empty">
+                      <Terminal size={20} />
+                      Waiting for server output...
+                    </div>
+                  ) : (
+                    consoleLines.map((line) => (
+                      <div className={`is-${line.stream}`} key={line.id}>
+                        <span>{line.stream === "command" ? "CMD" : line.stream.toUpperCase()}</span>
+                        <code>{line.text}</code>
+                      </div>
+                    ))
+                  )}
+                  <div ref={consoleEndRef} />
+                </div>
+                {consoleError && (
+                  <p className="aster-host-console-error">{consoleError}</p>
+                )}
+                <form
+                  className="aster-host-command"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void submitConsoleCommand();
+                  }}
+                >
+                  <span>&gt;</span>
+                  <input
+                    value={consoleCommand}
+                    onChange={(event) => setConsoleCommand(event.target.value)}
+                    placeholder="Enter a Minecraft server command..."
+                    maxLength={256}
+                    autoComplete="off"
+                  />
+                  <button type="submit" disabled={!consoleCommand.trim() || !ownSession}>
+                    <Send size={13} />
+                    Send
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {view === "settings" && (
+              <div className="aster-host-settings">
+                <div className="aster-host-settings-note">
+                  <ShieldCheck size={16} />
+                  <span>
+                    <strong>Saved per world</strong>
+                    Online mode and remote console access stay protected.
+                  </span>
+                </div>
+                <div className="aster-host-settings-grid">
+                  <label className="wide">
+                    <span>Server name</span>
+                    <input
+                      value={settings.motd}
+                      maxLength={80}
+                      onChange={(event) => updateSetting("motd", event.target.value)}
+                    />
+                  </label>
+                  <label>
+                    <span>Default game mode</span>
+                    <select
+                      value={settings.gameMode}
+                      onChange={(event) =>
+                        updateSetting(
+                          "gameMode",
+                          event.target.value as HostServerSettings["gameMode"],
+                        )
+                      }
+                    >
+                      <option value="survival">Survival</option>
+                      <option value="creative">Creative</option>
+                      <option value="adventure">Adventure</option>
+                      <option value="spectator">Spectator</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Difficulty</span>
+                    <select
+                      value={settings.difficulty}
+                      onChange={(event) =>
+                        updateSetting(
+                          "difficulty",
+                          event.target.value as HostServerSettings["difficulty"],
+                        )
+                      }
+                    >
+                      <option value="peaceful">Peaceful</option>
+                      <option value="easy">Easy</option>
+                      <option value="normal">Normal</option>
+                      <option value="hard">Hard</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Player slots</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={100}
+                      value={settings.maxPlayers}
+                      onChange={(event) =>
+                        updateSetting("maxPlayers", event.currentTarget.valueAsNumber)
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>Server RAM</span>
+                    <select
+                      value={settings.memoryGb}
+                      onChange={(event) =>
+                        updateSetting("memoryGb", Number(event.target.value))
+                      }
+                    >
+                      {[2, 3, 4, 6, 8, 12, 16].map((amount) => (
+                        <option value={amount} key={amount}>{amount} GB</option>
+                      ))}
+                    </select>
+                  </label>
+                  <RamSafetyWarning allocatedGb={settings.memoryGb} />
+                  <label>
+                    <span>View distance</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={32}
+                      value={settings.viewDistance}
+                      onChange={(event) =>
+                        updateSetting("viewDistance", event.currentTarget.valueAsNumber)
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>Simulation distance</span>
+                    <input
+                      type="number"
+                      min={2}
+                      max={32}
+                      value={settings.simulationDistance}
+                      onChange={(event) =>
+                        updateSetting(
+                          "simulationDistance",
+                          event.currentTarget.valueAsNumber,
+                        )
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>Spawn protection</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={32}
+                      value={settings.spawnProtection}
+                      onChange={(event) =>
+                        updateSetting(
+                          "spawnProtection",
+                          event.currentTarget.valueAsNumber,
+                        )
+                      }
+                    />
+                  </label>
+                  <label>
+                    <span>Local port</span>
+                    <input
+                      type="number"
+                      min={1024}
+                      max={65535}
+                      value={settings.port}
+                      onChange={(event) =>
+                        updateSetting("port", event.currentTarget.valueAsNumber)
+                      }
+                    />
+                  </label>
+                </div>
+                <div className="aster-host-toggles">
+                  {([
+                    ["pvp", "Player combat", "Allow players to damage each other."],
+                    ["allowFlight", "Allow flight", "Avoid flight kicks for compatible mods."],
+                    ["whitelist", "Whitelist", "Only approved Minecraft names may join."],
+                  ] as const).map(([key, label, description]) => (
+                    <label key={key}>
+                      <span>
+                        <strong>{label}</strong>
+                        <small>{description}</small>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={settings[key]}
+                        onChange={(event) => updateSetting(key, event.target.checked)}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <footer className="aster-host-settings-footer">
+                  <span className={settingsMessage.includes("could not") ? "error" : ""}>
+                    {settingsLoading
+                      ? "Loading this world's settings..."
+                      : settingsMessage ||
+                        (ownSession
+                          ? "Changes are stored now and apply after restarting the host."
+                          : "These settings will be used the next time this world starts.")}
+                  </span>
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={settingsLoading || settingsSaving}
+                    onClick={() => void persistSettings()}
+                  >
+                    {settingsSaving ? <RefreshCw size={13} className="spin" /> : <Check size={13} />}
+                    {settingsSaving ? "Saving..." : "Save settings"}
+                  </button>
+                </footer>
+              </div>
+            )}
+          </motion.section>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 

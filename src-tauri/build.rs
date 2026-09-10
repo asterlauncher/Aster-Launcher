@@ -11,6 +11,13 @@ fn main() {
         println!("cargo:rustc-env=VITE_MICROSOFT_CLIENT_ID={client_id}");
     }
 
+    if let Some(api_key) = read_env_value(Path::new("../.env"), "CURSEFORGE_API_KEY")
+        .or_else(|| env::var("CURSEFORGE_API_KEY").ok())
+        .filter(|value| !value.trim().is_empty())
+    {
+        println!("cargo:rustc-env=CURSEFORGE_API_KEY={api_key}");
+    }
+
     tauri_build::build()
 }
 

@@ -4,6 +4,7 @@ use std::{
     process::Command,
 };
 
+use ring::digest::{digest, SHA1_FOR_LEGACY_USE_ONLY};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha512};
 use tauri::{AppHandle, Emitter, Manager};
@@ -11,11 +12,12 @@ use uuid::Uuid;
 
 use super::instance_commands::{write_content_metadata_items, InstalledContentMetadata};
 
-const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_INSTALLED_BYTES: u64 = 12 * 1024 * 1024 * 1024;
 const CURSEFORGE_FILES_API: &str = "https://api.curseforge.com/v1/mods/files";
 const CURSEFORGE_MODS_API: &str = "https://api.curseforge.com/v1/mods";
 const MODRINTH_PROJECTS_API: &str = "https://api.modrinth.com/v2/projects";
+const MODRINTH_VERSION_FILE_API: &str = "https://api.modrinth.com/v2/version_file";
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,11 +112,17 @@ struct CurseForgeLoader {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct CurseForgeManifestFile {
+    #[serde(rename = "projectID", alias = "projectId")]
     project_id: u64,
+    #[serde(rename = "fileID", alias = "fileId")]
     file_id: u64,
+    #[serde(default = "default_required_modpack_file")]
     required: bool,
+}
+
+fn default_required_modpack_file() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -157,6 +165,35 @@ struct CurseForgeDownloadFile {
     file_name: String,
     download_url: Option<String>,
     file_length: u64,
+    #[serde(default)]
+    hashes: Vec<CurseForgeFileHash>,
+}
+
+#[derive(Debug, Deserialize)]
+struct CurseForgeFileHash {
+    value: String,
+    algo: u8,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModrinthVersionFile {
+    id: String,
+    project_id: String,
+    #[serde(default)]
+    game_versions: Vec<String>,
+    #[serde(default)]
+    loaders: Vec<String>,
+    #[serde(default)]
+    files: Vec<ModrinthVersionDownload>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct ModrinthVersionDownload {
+    url: String,
+    filename: String,
+    size: u64,
+    #[serde(default)]
+    hashes: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -519,17 +556,28 @@ fn lowercase_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+fn sha1_hex(bytes: &[u8]) -> String {
+    lowercase_hex(digest(&SHA1_FOR_LEGACY_USE_ONLY, bytes).as_ref())
+}
+
 async fn write_download(
     client: &reqwest::Client,
     destination: &Path,
     download_url: &str,
     maximum: u64,
+    expected_sha1: Option<&str>,
     expected_sha512: Option<&str>,
 ) -> Result<u64, String> {
     if !is_safe_relative_path(destination) && !destination.is_absolute() {
         return Err("The modpack contains an unsafe file path.".to_owned());
     }
     let bytes = download_bytes(client, download_url, maximum).await?;
+    if let Some(expected) = expected_sha1 {
+        let actual = sha1_hex(&bytes);
+        if !actual.eq_ignore_ascii_case(expected) {
+            return Err("A downloaded modpack file failed its integrity check.".to_owned());
+        }
+    }
     if let Some(expected) = expected_sha512 {
         let actual = lowercase_hex(&Sha512::digest(&bytes));
         if !actual.eq_ignore_ascii_case(expected) {
@@ -554,6 +602,60 @@ async fn write_download(
         .await
         .map_err(|_| "A downloaded modpack file could not be installed.".to_owned())?;
     Ok(bytes.len() as u64)
+}
+
+fn curseforge_sha1(file: &CurseForgeDownloadFile) -> Option<&str> {
+    file.hashes
+        .iter()
+        .find(|hash| hash.algo == 1 && hash.value.len() == 40)
+        .map(|hash| hash.value.as_str())
+}
+
+fn modrinth_version_matches(
+    version: &ModrinthVersionFile,
+    game_version: &str,
+    loader: &str,
+) -> bool {
+    version
+        .game_versions
+        .iter()
+        .any(|candidate| candidate == game_version)
+        && version
+            .loaders
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(loader))
+}
+
+async fn exact_modrinth_fallback(
+    client: &reqwest::Client,
+    curseforge_file: &CurseForgeDownloadFile,
+    game_version: &str,
+    loader: &str,
+) -> Option<(ModrinthVersionFile, ModrinthVersionDownload)> {
+    let sha1 = curseforge_sha1(curseforge_file)?;
+    let response = client
+        .get(format!("{MODRINTH_VERSION_FILE_API}/{sha1}"))
+        .query(&[("algorithm", "sha1")])
+        .send()
+        .await
+        .ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let version = response.json::<ModrinthVersionFile>().await.ok()?;
+    if !modrinth_version_matches(&version, game_version, loader) {
+        return None;
+    }
+    let download = version
+        .files
+        .iter()
+        .find(|file| {
+            file.hashes
+                .get("sha1")
+                .is_some_and(|hash| hash.eq_ignore_ascii_case(sha1))
+        })?
+        .clone();
+    Some((version, download))
 }
 
 fn content_location(path: &str) -> Option<(&'static str, String)> {
@@ -710,6 +812,7 @@ async fn install_modrinth(
             &destination.join(relative),
             download_url,
             file.file_size.max(1),
+            file.hashes.get("sha1").map(String::as_str),
             file.hashes.get("sha512").map(String::as_str),
         )
         .await?;
@@ -737,6 +840,7 @@ async fn install_modrinth(
                 project_id,
                 release_id,
                 icon_url: project.and_then(|value| value.icon_url.clone()),
+                hidden: false,
             });
         }
         installed_files += 1;
@@ -815,56 +919,122 @@ async fn install_curseforge(
     let mut installed_files = 0_usize;
     let mut content_metadata = Vec::new();
     let requested_count = requested.len().max(1);
+    let loader = curseforge_loader(&manifest.minecraft.mod_loaders);
     for requested_file in requested {
         let file = resolved
             .get(&requested_file.file_id)
             .ok_or_else(|| "CurseForge did not return a required modpack file.".to_owned())?;
-        let download_url = file.download_url.as_deref().ok_or_else(|| {
-            format!(
-                "CurseForge does not permit automatic download of project {} file {}.",
-                requested_file.project_id, requested_file.file_id
+        let project = projects.get(&requested_file.project_id);
+        let curseforge_hash = curseforge_sha1(file).map(str::to_owned);
+        let fallback = if file.download_url.is_none() {
+            let fallback_name = project
+                .map(|value| value.name.as_str())
+                .unwrap_or(file.file_name.as_str());
+            emit_download_progress(
+                app,
+                download_id,
+                (15 + (installed_files * 78 / requested_count)).min(92) as u8,
+                format!("Checking Modrinth for an identical copy of {fallback_name}"),
+            );
+            exact_modrinth_fallback(client, file, &manifest.minecraft.version, &loader).await
+        } else {
+            None
+        };
+        let (
+            download_url,
+            installed_file_name,
+            expected_size,
+            expected_sha1,
+            expected_sha512,
+            source,
+            metadata_project_id,
+            metadata_release_id,
+            used_fallback,
+        ) = if let Some(url) = file.download_url.as_ref() {
+            (
+                url.clone(),
+                file.file_name.clone(),
+                file.file_length,
+                curseforge_hash,
+                None,
+                "CurseForge".to_owned(),
+                requested_file.project_id.to_string(),
+                requested_file.file_id.to_string(),
+                false,
             )
-        })?;
+        } else if let Some((version, download)) = fallback {
+            let sha1 = download.hashes.get("sha1").cloned();
+            let sha512 = download.hashes.get("sha512").cloned();
+            (
+                download.url,
+                download.filename,
+                download.size,
+                sha1,
+                sha512,
+                "Modrinth".to_owned(),
+                version.project_id,
+                version.id,
+                true,
+            )
+        } else {
+            return Err(format!(
+                "No identical Modrinth fallback found for CurseForge project {} file {} ({} {}). Manual download is required because CurseForge blocks automatic distribution.",
+                requested_file.project_id,
+                requested_file.file_id,
+                manifest.minecraft.version,
+                loader
+            ));
+        };
         installed_bytes = installed_bytes
-            .checked_add(file.file_length)
+            .checked_add(expected_size)
             .ok_or_else(|| "The installed modpack is too large.".to_owned())?;
         if installed_bytes > MAX_INSTALLED_BYTES {
             return Err("The installed modpack exceeds the 12 GB safety limit.".to_owned());
         }
-        write_download(
+        let actual_size = write_download(
             client,
-            &destination.join("mods").join(&file.file_name),
-            download_url,
-            file.file_length.max(1),
-            None,
+            &destination.join("mods").join(&installed_file_name),
+            &download_url,
+            expected_size.max(1),
+            expected_sha1.as_deref(),
+            expected_sha512.as_deref(),
         )
         .await?;
-        let project = projects.get(&requested_file.project_id);
-        let fallback_name = Path::new(&file.file_name)
+        if actual_size != expected_size {
+            return Err("A downloaded modpack file has the wrong size.".to_owned());
+        }
+        let fallback_name = Path::new(&installed_file_name)
             .file_stem()
             .and_then(|value| value.to_str())
-            .unwrap_or(&file.file_name)
+            .unwrap_or(&installed_file_name)
             .replace(['-', '_'], " ");
         content_metadata.push(InstalledContentMetadata {
             section: "mods".to_owned(),
-            file_name: file.file_name.clone(),
+            file_name: installed_file_name,
             name: project
                 .map(|value| value.name.clone())
                 .unwrap_or(fallback_name),
-            version: requested_file.file_id.to_string(),
-            source: "CurseForge".to_owned(),
-            project_id: requested_file.project_id.to_string(),
-            release_id: requested_file.file_id.to_string(),
+            version: metadata_release_id.clone(),
+            source,
+            project_id: metadata_project_id,
+            release_id: metadata_release_id,
             icon_url: project
                 .and_then(|value| value.logo.as_ref())
                 .map(|logo| logo.thumbnail_url.clone()),
+            hidden: false,
         });
         installed_files += 1;
         emit_download_progress(
             app,
             download_id,
             (15 + (installed_files * 78 / requested_count)).min(93) as u8,
-            format!("Installing file {installed_files} of {requested_count}"),
+            if used_fallback {
+                format!(
+                    "Installing file {installed_files} of {requested_count} (identical Modrinth fallback)"
+                )
+            } else {
+                format!("Installing file {installed_files} of {requested_count}")
+            },
         );
     }
     write_content_metadata_items(destination, content_metadata)?;
@@ -872,8 +1042,6 @@ async fn install_curseforge(
         installed_files +=
             extract_prefix(archive_path, overrides, destination, &mut installed_bytes)?;
     }
-    let loader = curseforge_loader(&manifest.minecraft.mod_loaders);
-
     Ok(InstalledModpackResult {
         name: manifest.name,
         version: manifest.version,
@@ -1137,7 +1305,7 @@ pub async fn import_modpack(
         || metadata.len() > MAX_ARCHIVE_BYTES
         || !matches!(extension.as_str(), "mrpack" | "zip")
     {
-        return Err("Choose a .mrpack or .zip archive smaller than 512 MB.".to_owned());
+        return Err("Choose a .mrpack or .zip archive smaller than 2 GB.".to_owned());
     }
 
     let instances = instances_directory(&app)?;
@@ -1192,9 +1360,69 @@ pub async fn import_modpack(
     installation
 }
 
+#[tauri::command]
+pub async fn update_imported_modpack(
+    app: AppHandle,
+    instance_id: String,
+    source_path: String,
+    download_id: String,
+) -> Result<InstalledModpackResult, String> {
+    validate_instance_id(&instance_id)?;
+    let instances = instances_directory(&app)?;
+    let target = instances.join(&instance_id);
+    if !target.is_dir() {
+        return Err("The installed shared modpack could not be found.".to_owned());
+    }
+    let backup = instances.join(format!(".{instance_id}-before-update-{}", Uuid::new_v4()));
+    std::fs::rename(&target, &backup).map_err(|_| {
+        "Close Minecraft before updating this shared modpack, then try again.".to_owned()
+    })?;
+
+    let updated = import_modpack(app.clone(), instance_id.clone(), source_path, download_id).await;
+    let result = match updated {
+        Ok(result) => result,
+        Err(error) => {
+            let _ = std::fs::remove_dir_all(&target);
+            let _ = std::fs::rename(&backup, &target);
+            return Err(error);
+        }
+    };
+
+    let preserve = (|| -> Result<(), String> {
+        let mut copied_bytes = 0_u64;
+        let mut copied_files = 0_usize;
+        for folder in ["saves", "screenshots"] {
+            copy_export_tree(
+                &backup.join(folder),
+                &target.join(folder),
+                &mut copied_bytes,
+                &mut copied_files,
+            )?;
+        }
+        for file in ["options.txt", "servers.dat"] {
+            let source = backup.join(file);
+            if source.is_file() {
+                std::fs::copy(&source, target.join(file))
+                    .map_err(|_| format!("The existing {file} file could not be preserved."))?;
+            }
+        }
+        Ok(())
+    })();
+    if let Err(error) = preserve {
+        let _ = std::fs::remove_dir_all(&target);
+        let _ = std::fs::rename(&backup, &target);
+        return Err(error);
+    }
+    let _ = std::fs::remove_dir_all(&backup);
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{extract_prefix, is_safe_relative_path, read_zip_text};
+    use super::{
+        extract_prefix, is_safe_relative_path, modrinth_version_matches, read_zip_text,
+        CurseForgeManifest, ModrinthVersionFile,
+    };
     use std::{path::Path, process::Command};
     use uuid::Uuid;
 
@@ -1203,6 +1431,45 @@ mod tests {
         assert!(is_safe_relative_path(Path::new("mods/example.jar")));
         assert!(!is_safe_relative_path(Path::new("../outside.jar")));
         assert!(!is_safe_relative_path(Path::new("/absolute.jar")));
+    }
+
+    #[test]
+    fn reads_standard_curseforge_manifest_ids() {
+        let manifest: CurseForgeManifest = serde_json::from_str(
+            r#"{
+                "minecraft": {
+                    "version": "1.20.1",
+                    "modLoaders": [{"id": "forge-47.4.0", "primary": true}]
+                },
+                "manifestType": "minecraftModpack",
+                "manifestVersion": 1,
+                "name": "Aster test pack",
+                "version": "1.0.0",
+                "author": "Aster",
+                "files": [{"projectID": 123, "fileID": 456, "required": true}],
+                "overrides": "overrides"
+            }"#,
+        )
+        .expect("parse CurseForge manifest");
+
+        assert_eq!(manifest.files[0].project_id, 123);
+        assert_eq!(manifest.files[0].file_id, 456);
+        assert!(manifest.files[0].required);
+    }
+
+    #[test]
+    fn requires_matching_loader_and_game_version_for_modrinth_fallbacks() {
+        let version = ModrinthVersionFile {
+            id: "version".to_owned(),
+            project_id: "project".to_owned(),
+            game_versions: vec!["1.20.1".to_owned()],
+            loaders: vec!["forge".to_owned()],
+            files: Vec::new(),
+        };
+
+        assert!(modrinth_version_matches(&version, "1.20.1", "Forge"));
+        assert!(!modrinth_version_matches(&version, "1.20.1", "Fabric"));
+        assert!(!modrinth_version_matches(&version, "1.21.1", "Forge"));
     }
 
     #[test]

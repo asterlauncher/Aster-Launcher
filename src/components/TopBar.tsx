@@ -12,9 +12,11 @@ import {
   Info,
   LogOut,
   MessageSquareText,
+  Minus,
   Plus,
   RefreshCw,
   ShieldCheck,
+  Square,
   Sparkles,
   Timer,
   UserRound,
@@ -63,16 +65,14 @@ const notificationIcons = {
 
 export function TopBar() {
   const {
-    account,
+    asterAccount,
     setPage,
     openModal,
     downloads,
     setDownloads,
-    loggedIn,
-    authStatus,
-    authBusy,
-    beginMicrosoftLogin,
-    signOut,
+    asterLoggedIn,
+    asterAuthBusy,
+    signOutAster,
     notifications,
     markNotificationRead,
     markAllNotificationsRead,
@@ -604,7 +604,7 @@ export function TopBar() {
           <span>
             <UserRound size={14} />
           </span>
-          <strong>{account?.username ?? "Signed out"}</strong>
+          <strong>{asterAccount?.username ?? "Sign in"}</strong>
           <ChevronDown size={12} />
         </button>
         {accountMenuOpen && (
@@ -614,16 +614,14 @@ export function TopBar() {
                 <UserRound size={16} />
               </span>
               <div>
-                <strong>{account?.username ?? "No active account"}</strong>
+                <strong>{asterAccount?.username ?? "No Aster account"}</strong>
                 <small>
                   <ShieldCheck size={10} />
-                  {authStatus === "expired"
-                    ? "Session expired"
-                    : loggedIn
-                      ? "Session active"
-                      : authBusy
-                        ? "Signing in"
-                        : "Signed out"}
+                  {asterLoggedIn
+                    ? "Aster session active"
+                    : asterAuthBusy
+                      ? "Checking session"
+                      : "Signed out"}
                 </small>
               </div>
             </header>
@@ -631,29 +629,28 @@ export function TopBar() {
               type="button"
               onClick={() => {
                 setAccountMenuOpen(false);
-                openModal("manage-account");
+                openModal(asterLoggedIn ? "aster-account" : "aster-auth");
               }}
             >
               <UserRound size={13} />
-              Accounts
+              Aster account
             </button>
             <button
               type="button"
               onClick={() => {
                 setAccountMenuOpen(false);
-                if (loggedIn) openModal("add-account");
-                else void beginMicrosoftLogin();
+                openModal("aster-auth");
               }}
             >
               <Plus size={13} />
-              {loggedIn ? "Add account" : "Sign in"}
+              {asterLoggedIn ? "Switch account" : "Sign in / Register"}
             </button>
-            {loggedIn && (
+            {asterLoggedIn && (
               <button
                 type="button"
                 onClick={() => {
                   setAccountMenuOpen(false);
-                  void signOut();
+                  void signOutAster();
                 }}
               >
                 <LogOut size={13} />
@@ -662,6 +659,36 @@ export function TopBar() {
             )}
           </div>
         )}
+      </div>
+
+      <div className="window-controls" data-no-drag>
+        <button
+          type="button"
+          className="window-control"
+          onClick={() => void getCurrentWindow().minimize()}
+          aria-label="Minimize window"
+          title="Minimize"
+        >
+          <Minus size={14} strokeWidth={1.75} />
+        </button>
+        <button
+          type="button"
+          className="window-control"
+          onClick={() => void getCurrentWindow().toggleMaximize()}
+          aria-label="Maximize or restore window"
+          title="Maximize / Restore"
+        >
+          <Square size={11} strokeWidth={1.75} />
+        </button>
+        <button
+          type="button"
+          className="window-control window-control-close"
+          onClick={() => void getCurrentWindow().close()}
+          aria-label="Close window"
+          title="Close"
+        >
+          <X size={15} strokeWidth={1.75} />
+        </button>
       </div>
 
     </header>

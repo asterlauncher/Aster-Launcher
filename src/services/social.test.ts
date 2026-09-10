@@ -12,6 +12,15 @@ describe("Aster Social error handling", () => {
     expect(
       isSocialRateLimitError({ message: "Request rate limit reached" }),
     ).toBe(true);
+    expect(isSocialRateLimitError("Aster Social sign-in rate limit reached.")).toBe(
+      true,
+    );
+    expect(
+      isSocialRateLimitError({
+        message: "{}",
+        originalError: { status: 429 },
+      }),
+    ).toBe(true);
   });
 
   it("does not treat ordinary social errors as request limits", () => {

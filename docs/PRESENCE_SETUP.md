@@ -9,7 +9,10 @@ table.
 
 1. Create a Supabase Free project at <https://supabase.com/dashboard>.
 2. Open **SQL Editor → New query**.
-3. Paste and run [`supabase/presence.sql`](../supabase/presence.sql).
+3. Paste and run the complete
+   [`supabase/social.sql`](../supabase/social.sql). This is the single
+   canonical setup file for Presence, Social, Chat, Gifts and Auth
+   compatibility. Do not run the older standalone migrations as well.
 4. Open the project's **Connect** dialog or **Settings → API Keys**.
 5. Copy the Project URL and the **Publishable key**. Never use a Secret or
    `service_role` key in the launcher.

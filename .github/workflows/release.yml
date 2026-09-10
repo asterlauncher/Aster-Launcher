@@ -7,7 +7,7 @@ on:
     branches:
       - main
     paths:
-      - "docs/releases/0.5.3.md"
+      - "docs/releases/0.7.9.md"
   workflow_dispatch:
 
 permissions:
@@ -46,18 +46,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: app-v0.5.3
-          releaseName: "Aster Launcher v0.5.3"
+          tagName: app-v0.7.9
+          releaseName: "Aster Launcher v0.7.9"
           releaseBody: |
-            # Aster Launcher 0.5.3 — Secure Social Session Hotfix
+            # Aster Launcher 0.7.9 — Unified Minecraft Hero
 
-            - Existing Social sessions are restored before anonymous sign-in cooldowns
-            - Social refresh tokens are backed up with Windows DPAPI across launcher updates
-            - Duplicate profile heartbeats and database requests are reduced
-            - Minecraft names containing underscores work in player search
-            - Player search uses a safe online-first database function
-            - Unused stale installer identities can be reclaimed safely
-            - Social connection errors now include an in-place Retry action
+            - Extends the Minecraft hero background behind the account card
+            - Removes the separate black area on the right side of the hero
+            - Keeps account controls readable on a translucent blurred surface
 
             This is a closed-alpha build for public testing. Minecraft: Java Edition must be owned separately.
           generateReleaseNotes: true

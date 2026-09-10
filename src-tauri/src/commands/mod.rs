@@ -1,7 +1,12 @@
 pub mod auth_commands;
+pub mod btd6_commands;
 pub mod content_commands;
+pub mod host_commands;
 pub mod instance_commands;
 pub mod launch_commands;
 pub mod modpack_commands;
+pub mod shared_world_commands;
 pub mod social_commands;
+pub mod sprocket_commands;
+pub mod system_commands;
 pub mod update_commands;

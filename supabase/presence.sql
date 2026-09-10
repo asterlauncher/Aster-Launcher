@@ -1,5 +1,6 @@
--- Run this entire file in Supabase: SQL Editor -> New query -> Run.
--- It replaces the previous anonymous-auth version and does not create Auth users.
+-- Standalone presence migration retained for reference.
+-- For a complete installation, run ONLY supabase/social.sql instead. It now
+-- contains Presence, Social, Chat, Gifts and the anonymous-auth repair.
 
 drop function if exists public.launcher_presence_heartbeat(text);
 drop function if exists public.launcher_presence_leave();

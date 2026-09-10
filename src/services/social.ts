@@ -10,7 +10,7 @@ import {
   PUBLIC_SUPABASE_PUBLISHABLE_KEY,
   PUBLIC_SUPABASE_URL,
 } from "../config/publicServices";
-import type { PublicAccount } from "../types/auth";
+import type { AsterAccount } from "../types/auth";
 import { isTauriRuntime } from "./auth";
 
 export type SocialAttachmentKind = "screenshot" | "modpack";
@@ -79,6 +79,27 @@ export interface SocialSnapshot {
   requests: SocialFriendRequest[];
 }
 
+export interface AsterGift {
+  id: string;
+  amount: number;
+  title: string;
+  message: string;
+  senderName: string;
+  createdAt: string;
+}
+
+export interface AsterGiftClaim {
+  amount: number;
+  balance: number;
+}
+
+export interface SendAsterGiftInput {
+  recipientName: string;
+  amount: number;
+  title: string;
+  message: string;
+}
+
 interface ProfileRow {
   user_id: string;
   minecraft_id: string;
@@ -113,10 +134,26 @@ interface MessageRow {
   created_at: string;
 }
 
+interface AsterGiftRow {
+  id: string;
+  sender_id: string;
+  recipient_id: string;
+  amount: number;
+  title: string;
+  message: string;
+  created_at: string;
+  claimed_at: string | null;
+}
+
 interface UploadedAttachmentResult {
   fileName: string;
   mimeType: string;
   size: number;
+}
+
+interface NativeSocialSession {
+  accessToken: string;
+  refreshToken: string;
 }
 
 const supabaseUrl =
@@ -125,13 +162,21 @@ const supabasePublishableKey =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim() ||
   PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 const SOCIAL_AUTH_STORAGE_KEY = "aster-launcher-social-auth";
-const SOCIAL_AUTH_COOLDOWN_KEY = "aster-social.auth-cooldown.v1";
+// v2 intentionally discards cooldowns created by the retired WebView signup loop.
+const SOCIAL_AUTH_COOLDOWN_KEY = "aster-social.auth-cooldown.v2";
 const SOCIAL_AUTH_COOLDOWN_MS = 2 * 60 * 1000;
 const PROFILE_SYNC_TTL_MS = 45 * 1000;
 
 export const isSocialConfigured = Boolean(
   supabaseUrl && supabasePublishableKey,
 );
+
+export function getSocialStorageConfig() {
+  return {
+    supabaseUrl,
+    publishableKey: supabasePublishableKey,
+  };
+}
 
 let socialClient: SupabaseClient | null = null;
 let sessionPromise: Promise<User> | null = null;
@@ -143,6 +188,35 @@ const attachmentUrlCache = new Map<
   string,
   { url: string; expiresAt: number }
 >();
+
+function usernameFromUser(user: User) {
+  const metadataName =
+    typeof user.user_metadata?.aster_username === "string"
+      ? user.user_metadata.aster_username
+      : "";
+  const emailName = user.email?.split("@")[0] ?? "AsterUser";
+  const normalized = (metadataName || emailName)
+    .replace(/[^a-zA-Z0-9_]/g, "")
+    .slice(0, 16);
+  return normalized.length >= 3 ? normalized : `Aster${user.id.slice(0, 6)}`;
+}
+
+function accountFromUser(user: User): AsterAccount | null {
+  if (user.is_anonymous || !user.email) return null;
+  return {
+    id: user.id,
+    username: usernameFromUser(user),
+    email: user.email,
+  };
+}
+
+function resetSocialCaches() {
+  sessionPromise = null;
+  profileSyncPromise = null;
+  profileSyncKey = "";
+  profileSyncedAt = 0;
+  attachmentUrlCache.clear();
+}
 
 function loadSocialAuthCooldown() {
   if (typeof window === "undefined") return 0;
@@ -160,12 +234,27 @@ function setSocialAuthCooldown(until: number) {
   }
 }
 
-export function isSocialRateLimitError(error: unknown) {
+function isSocialRateLimitErrorValue(
+  error: unknown,
+  seen: Set<object>,
+): boolean {
+  if (typeof error === "string") {
+    const message = error.toLowerCase();
+    return (
+      message.includes("rate limit") ||
+      message.includes("too many requests")
+    );
+  }
   if (typeof error !== "object" || error === null) return false;
+  if (seen.has(error)) return false;
+  seen.add(error);
   const candidate = error as {
     message?: unknown;
     status?: unknown;
     code?: unknown;
+    cause?: unknown;
+    error?: unknown;
+    originalError?: unknown;
   };
   const message =
     typeof candidate.message === "string"
@@ -176,8 +265,30 @@ export function isSocialRateLimitError(error: unknown) {
     candidate.code === 429 ||
     candidate.code === "429" ||
     message.includes("rate limit") ||
-    message.includes("too many requests")
+    message.includes("too many requests") ||
+    isSocialRateLimitErrorValue(candidate.cause, seen) ||
+    isSocialRateLimitErrorValue(candidate.error, seen) ||
+    isSocialRateLimitErrorValue(candidate.originalError, seen)
   );
+}
+
+export function isSocialRateLimitError(error: unknown) {
+  return isSocialRateLimitErrorValue(error, new Set<object>());
+}
+
+export function getSocialAuthRetryDelay() {
+  return Math.max(0, socialAuthCooldownUntil - Date.now());
+}
+
+function isOpaqueSocialAuthError(error: unknown) {
+  if (error instanceof Error) {
+    return error.message.trim() === "{}";
+  }
+  if (typeof error === "string") {
+    return error.trim() === "{}";
+  }
+  if (typeof error !== "object" || error === null) return false;
+  return Object.keys(error).length === 0;
 }
 
 function socialCooldownMessage() {
@@ -247,7 +358,7 @@ const socialAuthStorage: SupportedStorage = {
   },
 };
 
-function getSocialClient() {
+export function getSocialClient() {
   if (!isSocialConfigured || !supabaseUrl || !supabasePublishableKey) {
     throw new Error(
       "Aster Social is not configured. Add the Supabase environment values first.",
@@ -271,14 +382,26 @@ function getSocialClient() {
 
 function describeSocialError(error: unknown) {
   if (
+    isSocialRateLimitError(error) ||
+    (isOpaqueSocialAuthError(error) && socialAuthCooldownUntil > Date.now())
+  ) {
+    return socialCooldownMessage();
+  }
+  if (
     typeof error === "object" &&
     error !== null &&
     "message" in error &&
     typeof error.message === "string"
   ) {
     const message = error.message.trim();
-    if (!message) {
+    if (!message || message === "{}") {
       return "Aster Social returned an empty error. Check that supabase/social.sql was run completely.";
+    }
+    if (
+      message.includes("aster_gift") ||
+      message.includes("aster_wallet")
+    ) {
+      return "Aster Gifts is not installed in Supabase yet. Run the updated supabase/social.sql once.";
     }
     if (
       message.includes("social_profiles") ||
@@ -295,10 +418,10 @@ function describeSocialError(error: unknown) {
     ) {
       return "Chat storage is not ready yet. Run the updated supabase/social.sql once, then try the upload again.";
     }
-    if (isSocialRateLimitError(error)) {
-      return socialCooldownMessage();
-    }
     return message;
+  }
+  if (typeof error === "string" && error.trim()) {
+    return error.trim();
   }
   if (error instanceof Error) return error.message;
   return "Aster Social could not complete this request.";
@@ -370,7 +493,7 @@ async function messageFromRow(
   };
 }
 
-async function ensureSocialUser() {
+async function ensureLegacyOrAsterUser() {
   const client = getSocialClient();
   if (sessionPromise) return sessionPromise;
 
@@ -394,6 +517,25 @@ async function ensureSocialUser() {
       setSocialAuthCooldown(0);
     }
 
+    if (isTauriRuntime()) {
+      const nativeSession = await invoke<NativeSocialSession>(
+        "create_social_auth_session",
+        {
+          supabaseUrl,
+          apiKey: supabasePublishableKey,
+        },
+      );
+      const { data, error } = await client.auth.setSession({
+        access_token: nativeSession.accessToken,
+        refresh_token: nativeSession.refreshToken,
+      });
+      if (error) throw error;
+      if (!data.user) {
+        throw new Error("Supabase did not restore the native Social session.");
+      }
+      return data.user;
+    }
+
     const { data, error } = await client.auth.signInAnonymously();
     if (error) throw error;
     if (!data.user) throw new Error("Supabase did not create a social session.");
@@ -406,7 +548,7 @@ async function ensureSocialUser() {
     return user;
   } catch (error) {
     sessionPromise = null;
-    if (isSocialRateLimitError(error)) {
+    if (isSocialRateLimitError(error) || isOpaqueSocialAuthError(error)) {
       setSocialAuthCooldown(Date.now() + SOCIAL_AUTH_COOLDOWN_MS);
     }
     throw new Error(describeSocialError(error));
@@ -426,9 +568,9 @@ function playerFromProfile(profile: ProfileRow): SocialPlayer {
   };
 }
 
-async function syncProfile(account: PublicAccount) {
+export async function syncProfile(account: AsterAccount) {
   const client = getSocialClient();
-  const user = await ensureSocialUser();
+  const user = await ensureAsterUser();
   const nextKey = `${user.id}:${account.id}:${account.username.toLowerCase()}`;
   const cacheIsFresh =
     profileSyncKey === nextKey &&
@@ -442,8 +584,19 @@ async function syncProfile(account: PublicAccount) {
 
   profileSyncKey = nextKey;
   const currentSync = (async () => {
+    const { data: existingProfile, error: profileError } = await client
+      .from("social_profiles")
+      .select("minecraft_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (profileError) throw profileError;
     const { error } = await client.rpc("social_sync_profile", {
-      p_minecraft_id: account.id,
+      // Keep the previous profile key when upgrading an anonymous account.
+      // New Aster-only accounts use a namespaced auth UUID instead of a
+      // Minecraft UUID, so Microsoft is no longer part of Social identity.
+      p_minecraft_id:
+        (existingProfile as { minecraft_id?: string } | null)?.minecraft_id ??
+        `aster:${account.id}`,
       p_minecraft_name: account.username,
     });
     if (error) throw error;
@@ -479,7 +632,7 @@ async function loadProfiles(ids: string[]) {
 }
 
 export async function loadSocialSnapshot(
-  account: PublicAccount,
+  account: AsterAccount,
 ): Promise<SocialSnapshot> {
   try {
     const client = getSocialClient();
@@ -551,7 +704,7 @@ export async function loadSocialSnapshot(
 }
 
 export async function searchSocialPlayers(
-  account: PublicAccount,
+  account: AsterAccount,
   query: string,
 ): Promise<SocialPlayer[]> {
   const normalized = normalizeSocialSearchQuery(query);
@@ -585,7 +738,7 @@ export async function searchSocialPlayers(
 }
 
 export async function sendSocialFriendRequest(
-  account: PublicAccount,
+  account: AsterAccount,
   minecraftName: string,
 ) {
   try {
@@ -601,7 +754,7 @@ export async function sendSocialFriendRequest(
 }
 
 export async function respondToSocialFriendRequest(
-  account: PublicAccount,
+  account: AsterAccount,
   requestId: string,
   accept: boolean,
 ) {
@@ -619,7 +772,7 @@ export async function respondToSocialFriendRequest(
 }
 
 export async function cancelSocialFriendRequest(
-  account: PublicAccount,
+  account: AsterAccount,
   requestId: string,
 ) {
   try {
@@ -635,7 +788,7 @@ export async function cancelSocialFriendRequest(
 }
 
 export async function removeSocialFriend(
-  account: PublicAccount,
+  account: AsterAccount,
   friendshipId: string,
 ) {
   try {
@@ -651,7 +804,7 @@ export async function removeSocialFriend(
 }
 
 export async function loadSocialMessages(
-  account: PublicAccount,
+  account: AsterAccount,
   friendshipId: string,
 ): Promise<SocialMessage[]> {
   try {
@@ -677,7 +830,7 @@ export async function loadSocialMessages(
 }
 
 async function uploadSocialAttachment(
-  account: PublicAccount,
+  account: AsterAccount,
   friendshipId: string,
   kind: SocialAttachmentKind,
   selected: string,
@@ -735,7 +888,7 @@ async function uploadSocialAttachment(
 }
 
 export async function sendSocialAttachment(
-  account: PublicAccount,
+  account: AsterAccount,
   friendshipId: string,
   kind: SocialAttachmentKind,
 ) {
@@ -759,7 +912,7 @@ export async function sendSocialAttachment(
 }
 
 export async function sendSocialModpack(
-  account: PublicAccount,
+  account: AsterAccount,
   friendshipId: string,
   modpack: ShareableSocialModpack,
 ) {
@@ -845,7 +998,7 @@ export async function installSocialModpackAttachment(
 }
 
 export async function sendSocialMessage(
-  account: PublicAccount,
+  account: AsterAccount,
   friendshipId: string,
   body: string,
 ) {
@@ -869,7 +1022,7 @@ export async function sendSocialMessage(
 }
 
 export async function loadRecentSocialMessages(
-  account: PublicAccount,
+  account: AsterAccount,
 ): Promise<SocialMessageActivity[]> {
   try {
     const client = getSocialClient();
@@ -895,6 +1048,345 @@ export async function loadRecentSocialMessages(
             : profiles.get(message.sender_id)?.minecraft_name ?? "Aster player",
       })),
     );
+  } catch (error) {
+    throw new Error(describeSocialError(error));
+  }
+}
+
+async function ensureAsterUser() {
+  const { data, error } = await getSocialClient().auth.getSession();
+  if (error) throw error;
+  if (!data.session?.user || !accountFromUser(data.session.user)) {
+    throw new Error("Sign in to your Aster account to use community features.");
+  }
+  const user = await ensureLegacyOrAsterUser();
+  return user;
+}
+
+export async function restoreAsterAccount(): Promise<AsterAccount | null> {
+  if (!isSocialConfigured) return null;
+  try {
+    const client = getSocialClient();
+    const { data: sessionData, error: sessionError } = await client.auth.getSession();
+    if (sessionError) throw sessionError;
+    if (!sessionData.session) return null;
+    const { data, error } = await client.auth.getUser();
+    if (error) throw error;
+    return data.user ? accountFromUser(data.user) : null;
+  } catch (error) {
+    throw new Error(describeSocialError(error));
+  }
+}
+
+function normalizeAsterUsername(username: string) {
+  const normalized = username.trim();
+  if (!/^[a-zA-Z0-9_]{3,16}$/.test(normalized)) {
+    throw new Error("Aster names must be 3–16 characters and use only letters, numbers, or underscores.");
+  }
+  return normalized;
+}
+
+function normalizeAsterEmail(email: string) {
+  const normalized = email.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+    throw new Error("Enter a valid email address.");
+  }
+  return normalized;
+}
+
+function validateAsterPassword(password: string) {
+  if (password.length < 8) {
+    throw new Error("Your password must contain at least 8 characters.");
+  }
+}
+
+function socialErrorText(error: unknown) {
+  if (typeof error === "object" && error !== null && "message" in error) {
+    return String(error.message).toLowerCase();
+  }
+  return String(error).toLowerCase();
+}
+
+function isAlreadyRegisteredError(error: unknown) {
+  const message = socialErrorText(error);
+  return (
+    message.includes("already been registered") ||
+    message.includes("already registered") ||
+    message.includes("user already exists")
+  );
+}
+
+function isEmailConfirmationError(error: unknown) {
+  const message = socialErrorText(error);
+  return message.includes("email not confirmed") || message.includes("email_not_confirmed");
+}
+
+export async function registerAsterAccount(input: {
+  username: string;
+  email: string;
+  password: string;
+}): Promise<AsterAccount> {
+  let username = "";
+  let email = "";
+  let metadata: Record<string, string> = {};
+  try {
+    username = normalizeAsterUsername(input.username);
+    email = normalizeAsterEmail(input.email);
+    validateAsterPassword(input.password);
+    const client = getSocialClient();
+    const { data: current, error: sessionError } = await client.auth.getSession();
+    if (sessionError) throw sessionError;
+    let user: User | null = null;
+    metadata = {
+      aster_username: username,
+      username,
+      user_name: username,
+      name: username,
+    };
+
+    if (current.session?.user?.is_anonymous) {
+      // Upgrade the old anonymous identity in place. Its UUID stays unchanged,
+      // preserving friends, messages, gifts and uploaded mods.
+      const { data, error } = await client.auth.updateUser({
+        email,
+        password: input.password,
+        data: metadata,
+      });
+      if (error) throw error;
+      user = data.user;
+    } else if (current.session?.user) {
+      throw new Error("An Aster account is already signed in.");
+    } else {
+      const { data, error } = await client.auth.signUp({
+        email,
+        password: input.password,
+        options: { data: metadata },
+      });
+      if (error) throw error;
+      user = data.user;
+    }
+
+    if (!user) throw new Error("Aster could not create the account.");
+    resetSocialCaches();
+    const { data: activeSession } = await client.auth.getSession();
+    const activeAccount = activeSession.session?.user
+      ? accountFromUser(activeSession.session.user)
+      : null;
+    if (activeAccount) {
+      const account = { ...activeAccount, username };
+      await syncProfile(account);
+      return account;
+    }
+    return { id: user.id, username, email, pendingVerification: true };
+  } catch (error) {
+    if (isAlreadyRegisteredError(error) && email && username) {
+      const client = getSocialClient();
+      const login = await client.auth.signInWithPassword({
+        email,
+        password: input.password,
+      });
+      if (login.error) {
+        if (isEmailConfirmationError(login.error)) {
+          await client.auth.resend({ type: "signup", email }).catch(() => undefined);
+          throw new Error(
+            `This Aster account already exists but its email is not confirmed. We sent a new confirmation link to ${email}.`,
+          );
+        }
+        throw new Error(
+          "This email already belongs to an Aster account. Use Sign in with that account's password.",
+        );
+      }
+      if (!login.data.user) {
+        throw new Error("Aster could not restore the existing account.");
+      }
+      const updated = await client.auth.updateUser({ data: metadata });
+      if (updated.error) throw new Error(describeSocialError(updated.error));
+      const account: AsterAccount = {
+        id: login.data.user.id,
+        username,
+        email: login.data.user.email ?? email,
+      };
+      resetSocialCaches();
+      await syncProfile(account);
+      return account;
+    }
+    throw new Error(describeSocialError(error));
+  }
+}
+
+export async function signInAsterAccount(
+  email: string,
+  password: string,
+): Promise<AsterAccount> {
+  try {
+    const client = getSocialClient();
+    const { data, error } = await client.auth.signInWithPassword({
+      email: normalizeAsterEmail(email),
+      password,
+    });
+    if (error) throw error;
+    const account = data.user ? accountFromUser(data.user) : null;
+    if (!account) throw new Error("Aster did not return a valid account session.");
+    resetSocialCaches();
+    await syncProfile(account);
+    return account;
+  } catch (error) {
+    throw new Error(describeSocialError(error));
+  }
+}
+
+export async function signOutAsterAccount() {
+  try {
+    const { error } = await getSocialClient().auth.signOut();
+    if (error) throw error;
+    resetSocialCaches();
+  } catch (error) {
+    throw new Error(describeSocialError(error));
+  }
+}
+
+export async function requestAsterPasswordReset(email: string) {
+  try {
+    const { error } = await getSocialClient().auth.resetPasswordForEmail(
+      normalizeAsterEmail(email),
+    );
+    if (error) throw error;
+  } catch (error) {
+    throw new Error(describeSocialError(error));
+  }
+}
+
+function normalizeGiftAmount(amount: number) {
+  if (!Number.isFinite(amount)) {
+    throw new Error("Enter a valid Aster Credit amount.");
+  }
+  const normalized = Math.floor(amount);
+  if (normalized < 1 || normalized > 100_000) {
+    throw new Error("A gift must contain between 1 and 100,000 AC.");
+  }
+  return normalized;
+}
+
+function normalizeGiftCopy(value: string, label: string, maxLength: number) {
+  const normalized = value.trim();
+  if (!normalized) {
+    throw new Error(`${label} is required.`);
+  }
+  if (normalized.length > maxLength) {
+    throw new Error(`${label} can contain up to ${maxLength} characters.`);
+  }
+  return normalized;
+}
+
+export async function loadAsterGiftAdminStatus(account: AsterAccount) {
+  try {
+    const client = getSocialClient();
+    await syncProfile(account);
+    const { data, error } = await client.rpc("aster_is_gift_admin");
+    if (error) throw error;
+    return data === true;
+  } catch (error) {
+    throw new Error(describeSocialError(error));
+  }
+}
+
+export async function sendAsterGift(
+  account: AsterAccount,
+  input: SendAsterGiftInput,
+) {
+  const recipientName = normalizeSocialSearchQuery(input.recipientName);
+  if (recipientName.length < 3) {
+    throw new Error("Enter the recipient's complete Aster name.");
+  }
+  const amount = normalizeGiftAmount(input.amount);
+  const title = normalizeGiftCopy(input.title, "Gift title", 64);
+  const message = normalizeGiftCopy(input.message, "Gift message", 280);
+
+  try {
+    const client = getSocialClient();
+    await syncProfile(account);
+    const { data, error } = await client.rpc("aster_send_gift", {
+      p_recipient_name: recipientName,
+      p_amount: amount,
+      p_title: title,
+      p_message: message,
+    });
+    if (error) throw error;
+    return data as AsterGiftRow;
+  } catch (error) {
+    throw new Error(describeSocialError(error));
+  }
+}
+
+export async function loadPendingAsterGifts(
+  account: AsterAccount,
+): Promise<AsterGift[]> {
+  try {
+    const client = getSocialClient();
+    await syncProfile(account);
+    const { data, error } = await client
+      .from("aster_gifts")
+      .select(
+        "id,sender_id,recipient_id,amount,title,message,created_at,claimed_at",
+      )
+      .is("claimed_at", null)
+      .order("created_at", { ascending: true })
+      .limit(20);
+    if (error) throw error;
+
+    const rows = (data ?? []) as AsterGiftRow[];
+    const profiles = await loadProfiles(rows.map((gift) => gift.sender_id));
+    return rows.map((gift) => ({
+      id: gift.id,
+      amount: Number(gift.amount),
+      title: gift.title,
+      message: gift.message,
+      senderName:
+        profiles.get(gift.sender_id)?.minecraft_name ?? "Aster Team",
+      createdAt: gift.created_at,
+    }));
+  } catch (error) {
+    throw new Error(describeSocialError(error));
+  }
+}
+
+export async function loadAsterGiftWalletBalance(account: AsterAccount) {
+  try {
+    const client = getSocialClient();
+    await syncProfile(account);
+    const { data, error } = await client
+      .from("aster_wallets")
+      .select("balance")
+      .maybeSingle();
+    if (error) throw error;
+    const balance = Number((data as { balance?: number } | null)?.balance ?? 0);
+    return Number.isFinite(balance) && balance >= 0 ? Math.floor(balance) : 0;
+  } catch (error) {
+    throw new Error(describeSocialError(error));
+  }
+}
+
+export async function claimAsterGift(
+  account: AsterAccount,
+  giftId: string,
+): Promise<AsterGiftClaim> {
+  try {
+    const client = getSocialClient();
+    await syncProfile(account);
+    const { data, error } = await client.rpc("aster_claim_gift", {
+      p_gift_id: giftId,
+    });
+    if (error) throw error;
+    const result = Array.isArray(data) ? data[0] : data;
+    const amount = Number(result?.amount ?? 0);
+    const balance = Number(result?.balance ?? 0);
+    if (!Number.isFinite(amount) || !Number.isFinite(balance)) {
+      throw new Error("Aster returned an invalid gift balance.");
+    }
+    return {
+      amount: Math.floor(amount),
+      balance: Math.floor(balance),
+    };
   } catch (error) {
     throw new Error(describeSocialError(error));
   }

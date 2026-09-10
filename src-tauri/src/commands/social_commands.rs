@@ -24,6 +24,19 @@ pub struct UploadedChatAttachment {
     size: u64,
 }
 
+#[derive(Debug, Deserialize)]
+struct SupabaseSocialSession {
+    access_token: String,
+    refresh_token: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeSocialSession {
+    access_token: String,
+    refresh_token: String,
+}
+
 fn social_session_path(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
@@ -115,6 +128,98 @@ pub async fn clear_social_auth_session(app: AppHandle) -> Result<(), String> {
     })
     .await
     .map_err(|_| "The Social session could not be removed.".to_owned())?
+}
+
+fn social_auth_signup_url(value: &str) -> Result<Url, String> {
+    let mut url = Url::parse(value).map_err(|_| "The Social service URL is invalid.".to_owned())?;
+    if url.scheme() != "https" {
+        return Err("Aster Social requires secure HTTPS.".to_owned());
+    }
+    let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
+    if !host.ends_with(".supabase.co") {
+        return Err("The Social destination is not an approved Supabase host.".to_owned());
+    }
+    url.set_path("/auth/v1/signup");
+    url.set_query(None);
+    url.set_fragment(None);
+    Ok(url)
+}
+
+fn safe_auth_error(status: reqwest::StatusCode, body: &[u8]) -> String {
+    let parsed = serde_json::from_slice::<serde_json::Value>(body).ok();
+    let detail = parsed
+        .as_ref()
+        .and_then(|value| {
+            ["msg", "message", "error_description", "error", "code"]
+                .into_iter()
+                .find_map(|key| value.get(key).and_then(|entry| entry.as_str()))
+        })
+        .unwrap_or_default()
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(220)
+        .collect::<String>();
+
+    if detail.is_empty() {
+        format!("Aster Social authentication returned HTTP {status}.")
+    } else {
+        format!("Aster Social authentication failed: {detail} (HTTP {status}).")
+    }
+}
+
+#[tauri::command]
+pub async fn create_social_auth_session(
+    supabase_url: String,
+    api_key: String,
+) -> Result<NativeSocialSession, String> {
+    if api_key.trim().is_empty() {
+        return Err("The Supabase publishable key is missing.".to_owned());
+    }
+    let signup_url = social_auth_signup_url(&supabase_url)?;
+    let response = Client::new()
+        .post(signup_url)
+        .header("apikey", api_key.trim())
+        .bearer_auth(api_key.trim())
+        .json(&serde_json::json!({
+            "data": {},
+            "gotrue_meta_security": {
+                "captcha_token": null
+            }
+        }))
+        .send()
+        .await
+        .map_err(|_| "Aster Social could not reach the sign-in service.".to_owned())?;
+    let status = response.status();
+    let body = response
+        .bytes()
+        .await
+        .map_err(|_| "Aster Social returned an unreadable response.".to_owned())?;
+
+    if !status.is_success() {
+        return Err(match status {
+            reqwest::StatusCode::TOO_MANY_REQUESTS => {
+                "Aster Social sign-in rate limit reached.".to_owned()
+            }
+            reqwest::StatusCode::BAD_REQUEST
+                if String::from_utf8_lossy(&body)
+                    .to_ascii_lowercase()
+                    .contains("anonymous") =>
+            {
+                "Anonymous Social sign-in is disabled in Supabase.".to_owned()
+            }
+            _ => safe_auth_error(status, &body),
+        });
+    }
+
+    let session: SupabaseSocialSession = serde_json::from_slice(&body)
+        .map_err(|_| "Aster Social returned an invalid session.".to_owned())?;
+    if session.access_token.trim().is_empty() || session.refresh_token.trim().is_empty() {
+        return Err("Aster Social returned an incomplete session.".to_owned());
+    }
+    Ok(NativeSocialSession {
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+    })
 }
 
 fn allowed_attachment(path: &Path, kind: &str) -> Result<(String, u64), String> {
@@ -361,7 +466,10 @@ pub async fn remove_cached_chat_attachment(
 
 #[cfg(all(test, windows))]
 mod tests {
-    use super::{load_social_session_file, save_social_session_file};
+    use super::{
+        load_social_session_file, safe_auth_error, save_social_session_file,
+        social_auth_signup_url, SupabaseSocialSession,
+    };
 
     #[test]
     fn social_session_round_trips_through_windows_dpapi() {
@@ -388,5 +496,30 @@ mod tests {
         assert_eq!(restored, payload);
 
         let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn social_auth_only_targets_secure_supabase_projects() {
+        let url =
+            social_auth_signup_url("https://project.supabase.co").expect("valid Supabase URL");
+        assert_eq!(url.as_str(), "https://project.supabase.co/auth/v1/signup");
+        assert!(social_auth_signup_url("http://project.supabase.co").is_err());
+        assert!(social_auth_signup_url("https://supabase.co.evil.example").is_err());
+    }
+
+    #[test]
+    fn social_auth_reads_supabase_sessions_and_safe_error_details() {
+        let session: SupabaseSocialSession =
+            serde_json::from_str(r#"{"access_token":"access","refresh_token":"refresh"}"#)
+                .expect("Supabase snake-case session");
+        assert_eq!(session.access_token, "access");
+        assert_eq!(session.refresh_token, "refresh");
+
+        let message = safe_auth_error(
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            br#"{"code":"unexpected_failure","msg":"Database error saving new user"}"#,
+        );
+        assert!(message.contains("Database error saving new user"));
+        assert!(message.contains("500"));
     }
 }

@@ -39,6 +39,40 @@ export interface InstanceSecurityScanResult {
   message: string;
 }
 
+export interface AsterProvisionResult {
+  installedFiles: number;
+  systemFiles: number;
+  alreadyReady: boolean;
+}
+
+export interface AsterClientSettings {
+  coordinates: boolean;
+  fpsCounter: boolean;
+  clock: boolean;
+  sprintStatus: boolean;
+  direction: boolean;
+  minimap: boolean;
+  worldMap: boolean;
+  zoom: boolean;
+  betterF3: boolean;
+  appleSkin: boolean;
+  dynamicLights: boolean;
+}
+
+export const defaultAsterClientSettings: AsterClientSettings = {
+  coordinates: false,
+  fpsCounter: false,
+  clock: false,
+  sprintStatus: false,
+  direction: false,
+  minimap: false,
+  worldMap: false,
+  zoom: false,
+  betterF3: false,
+  appleSkin: false,
+  dynamicLights: false,
+};
+
 export async function openInstanceFolder(instanceId: string): Promise<void> {
   if (!isTauriRuntime()) {
     throw new Error("Instance folders are available in the native launcher.");
@@ -49,6 +83,34 @@ export async function openInstanceFolder(instanceId: string): Promise<void> {
 export async function createInstanceStructure(instanceId: string): Promise<void> {
   if (!isTauriRuntime()) return;
   return invoke<void>("create_instance_structure", { instanceId });
+}
+
+export async function provisionAsterProfile(
+  instanceId: string,
+  downloadId: string,
+): Promise<AsterProvisionResult> {
+  if (!isTauriRuntime()) {
+    return { installedFiles: 0, systemFiles: 0, alreadyReady: true };
+  }
+  return invoke<AsterProvisionResult>("provision_aster_profile", {
+    instanceId,
+    downloadId,
+  });
+}
+
+export async function getAsterClientSettings(
+  instanceId: string,
+): Promise<AsterClientSettings> {
+  if (!isTauriRuntime()) return defaultAsterClientSettings;
+  return invoke<AsterClientSettings>("get_aster_client_settings", { instanceId });
+}
+
+export async function setAsterClientSettings(
+  instanceId: string,
+  settings: AsterClientSettings,
+): Promise<void> {
+  if (!isTauriRuntime()) return;
+  return invoke<void>("set_aster_client_settings", { instanceId, settings });
 }
 
 export async function listInstanceContent(

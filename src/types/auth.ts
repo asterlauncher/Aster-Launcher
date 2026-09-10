@@ -8,6 +8,13 @@ export interface PublicAccount {
   sessionState: AccountSessionState;
 }
 
+export interface AsterAccount {
+  id: string;
+  username: string;
+  email: string;
+  pendingVerification?: boolean;
+}
+
 export type BackendAuthStatusState =
   | "signedOut"
   | "authenticating"

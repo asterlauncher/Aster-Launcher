@@ -101,6 +101,7 @@ export async function getContentReleases(
   provider: ContentProvider,
   projectId: string,
   gameVersion: string,
+  loader: string | null,
   offset: number,
   limit = 2,
 ): Promise<ContentReleasePage> {
@@ -108,6 +109,7 @@ export async function getContentReleases(
     provider: provider.toLowerCase(),
     projectId,
     gameVersion: gameVersion || null,
+    loader: loader || null,
     offset,
     limit,
   });

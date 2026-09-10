@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronLeft,
   Check,
+  CircleAlert,
   Clock3,
   Download,
   FileArchive,
@@ -12,6 +13,7 @@ import {
   Paperclip,
   Search,
   Send,
+  Server,
   UserMinus,
   UserPlus,
   Users,
@@ -27,6 +29,7 @@ import {
 } from "react";
 import {
   cancelSocialFriendRequest,
+  getSocialAuthRetryDelay,
   isSocialConfigured,
   loadSocialMessages,
   loadSocialSnapshot,
@@ -38,7 +41,6 @@ import {
   sendSocialAttachment,
   sendSocialFriendRequest,
   sendSocialMessage,
-  sendSocialModpack,
   type SocialFriend,
   type SocialMessage,
   type SocialPlayer,
@@ -51,8 +53,11 @@ import {
   type InstalledModpack,
 } from "../services/modpackLibrary";
 import { useAppStore } from "../store/AppStore";
+import { SharedWorldsPanel } from "./SharedWorldsPanel";
+import { SharedModpacksPanel } from "./SharedModpacksPanel";
+import { publishSharedModpack } from "../services/sharedModpacks";
 
-type FriendsTab = "friends" | "requests" | "add";
+type FriendsTab = "friends" | "requests" | "add" | "packs" | "worlds";
 
 function formatMessageTime(value: string) {
   const date = new Date(value);
@@ -84,9 +89,9 @@ function PlayerAvatar({
 
 export function FriendsHub() {
   const {
-    account,
-    loggedIn,
-    beginMicrosoftLogin,
+    asterAccount: account,
+    asterLoggedIn: loggedIn,
+    openModal,
     notify,
     setDownloads,
   } = useAppStore();
@@ -108,6 +113,7 @@ export function FriendsHub() {
   const [installingAttachmentId, setInstallingAttachmentId] =
     useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [socialRetryAt, setSocialRetryAt] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(
@@ -144,6 +150,7 @@ export function FriendsHub() {
         const next = await loadSocialSnapshot(account);
         setSnapshot(next);
         setError(null);
+        setSocialRetryAt(0);
         setSelectedFriendId((current) => {
           if (current && next.friends.some((friend) => friend.friendshipId === current)) {
             return current;
@@ -153,6 +160,8 @@ export function FriendsHub() {
       } catch (caught) {
         if (!silent) {
           setError(errorMessage(caught, "Aster Social is unavailable."));
+          const retryDelay = getSocialAuthRetryDelay();
+          setSocialRetryAt(retryDelay > 0 ? Date.now() + retryDelay : 0);
         }
       } finally {
         if (!silent) setLoading(false);
@@ -179,9 +188,24 @@ export function FriendsHub() {
 
   useEffect(() => {
     void refreshSnapshot();
+  }, [refreshSnapshot]);
+
+  const socialConnected = snapshot !== null;
+
+  useEffect(() => {
+    if (!socialConnected) return;
     const timer = window.setInterval(() => void refreshSnapshot(true), 10_000);
     return () => window.clearInterval(timer);
-  }, [refreshSnapshot]);
+  }, [refreshSnapshot, socialConnected]);
+
+  useEffect(() => {
+    if (socialConnected || socialRetryAt <= Date.now()) return;
+    const timer = window.setTimeout(
+      () => void refreshSnapshot(),
+      Math.max(250, socialRetryAt - Date.now() + 250),
+    );
+    return () => window.clearTimeout(timer);
+  }, [refreshSnapshot, socialConnected, socialRetryAt]);
 
   useEffect(() => {
     if (!selectedFriend) {
@@ -341,18 +365,17 @@ export function FriendsHub() {
     setModpackPickerOpen(false);
     setUploadingAttachment(true);
     try {
-      const sent = await sendSocialModpack(
+      const revision = await publishSharedModpack(
         account,
         selectedFriend.friendshipId,
         modpack,
       );
-      if (!sent) return;
-      await refreshMessages(selectedFriend, true);
       notify({
-        title: "Modpack sent",
-        message: `${modpack.name} was exported and shared with ${selectedFriend.minecraftName}.`,
+        title: "Modpack invitation sent",
+        message: `${selectedFriend.minecraftName} must accept ${modpack.name} revision ${revision} before installing it.`,
         tone: "success",
       });
+      setTab("packs");
     } catch (caught) {
       setError(errorMessage(caught, "The modpack could not be sent."));
     } finally {
@@ -444,9 +467,9 @@ export function FriendsHub() {
       <div className="friends-gate">
         <span><Users size={27} /></span>
         <h2>Your Friends</h2>
-        <p>Connect your Minecraft account before using friends and chat.</p>
-        <button type="button" className="social-primary-button" onClick={() => void beginMicrosoftLogin()}>
-          Connect Minecraft account
+        <p>Sign in to Aster before using friends and chat.</p>
+        <button type="button" className="social-primary-button" onClick={() => openModal("aster-auth")}>
+          Sign in to Aster
         </button>
       </div>
     );
@@ -482,6 +505,8 @@ export function FriendsHub() {
               snapshot?.requests.filter((request) => request.direction === "incoming").length ?? 0,
             ],
             ["add", "Add player", null],
+            ["packs", "Shared Modpacks", null],
+            ["worlds", "Shared Worlds", null],
           ] as const).map(([value, label, count]) => (
             <button
               key={value}
@@ -489,7 +514,7 @@ export function FriendsHub() {
               className={tab === value ? "is-active" : ""}
               onClick={() => setTab(value)}
             >
-              {value === "friends" ? <MessageSquareText size={13} /> : value === "requests" ? <Clock3 size={13} /> : <UserPlus size={13} />}
+              {value === "friends" ? <MessageSquareText size={13} /> : value === "requests" ? <Clock3 size={13} /> : value === "packs" ? <FileArchive size={13} /> : value === "worlds" ? <Server size={13} /> : <UserPlus size={13} />}
               <span>{label}</span>
               {count !== null && count > 0 && <b>{count}</b>}
             </button>
@@ -512,7 +537,8 @@ export function FriendsHub() {
             initial={{ opacity: 0, y: -5 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <span>{error}</span>
+            <CircleAlert className="social-error-icon" size={14} />
+            <span>{error === "{}" ? "Aster Social could not establish a session. Wait two minutes, then retry." : error}</span>
             <button
               className="social-error-retry"
               type="button"
@@ -568,7 +594,7 @@ export function FriendsHub() {
                   <div className="social-list-empty">
                     <Users size={20} />
                     <strong>No friends yet</strong>
-                    <span>Add someone by their Minecraft name.</span>
+                    <span>Add someone by their Aster name.</span>
                   </div>
                 )}
               </div>
@@ -770,17 +796,6 @@ export function FriendsHub() {
                                      </div>
                                    )}
                                  </div>
-                                 <button
-                                   type="button"
-                                   className="social-modpack-archive-fallback"
-                                   onClick={() => void handleSendAttachment("modpack")}
-                                 >
-                                   <span><Download size={14} /></span>
-                                   <span>
-                                     <strong>Choose archive instead</strong>
-                                     <small>ZIP or MRPACK · max 250 MB</small>
-                                   </span>
-                                 </button>
                                </>
                              )}
                            </motion.div>
@@ -870,7 +885,7 @@ export function FriendsHub() {
               <header>
                 <span><UserPlus size={16} /></span>
                 <div>
-                  <h3>Add a Minecraft friend</h3>
+                  <h3>Add an Aster friend</h3>
                   <p>Search for a player who has opened Aster at least once.</p>
                 </div>
               </header>
@@ -881,7 +896,7 @@ export function FriendsHub() {
                   value={query}
                   maxLength={16}
                   onChange={(event) => setQuery(event.target.value.replace(/[^a-zA-Z0-9_]/g, ""))}
-                  placeholder="Minecraft username..."
+                  placeholder="Aster name..."
                 />
                 {searching && (
                   <LoaderCircle
@@ -893,7 +908,7 @@ export function FriendsHub() {
               <div className="social-search-results">
                 {query.trim().length < 2 ? (
                   <div className="social-search-hint">
-                    Enter at least two characters of their Minecraft name.
+                    Enter at least two characters of their Aster name.
                   </div>
                 ) : !searching && searchResults.length === 0 ? (
                   <div className="social-list-empty large">
@@ -924,6 +939,28 @@ export function FriendsHub() {
                   })
                 )}
               </div>
+            </motion.div>
+          )}
+          {tab === "worlds" && (
+            <motion.div
+              key="worlds"
+              className="social-section shared-worlds-section"
+              initial={{ opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -6 }}
+            >
+              <SharedWorldsPanel />
+            </motion.div>
+          )}
+          {tab === "packs" && (
+            <motion.div
+              key="packs"
+              className="social-section shared-modpacks-section"
+              initial={{ opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -6 }}
+            >
+              <SharedModpacksPanel />
             </motion.div>
           )}
         </AnimatePresence>

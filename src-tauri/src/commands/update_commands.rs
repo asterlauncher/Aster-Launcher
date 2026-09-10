@@ -15,6 +15,7 @@ const RELEASES_PAGE_URL: &str = "https://github.com/asterlauncher/Aster-Launcher
 const UPDATE_MANIFEST_ASSET: &str = "aster-update.json";
 const UPDATE_PUBLIC_KEY: &str = "mRKRFNcmFw2xTxU8n7NFYJ1LtE+Jjau0HgS+NAwZyck=";
 const MAX_UPDATE_BYTES: u64 = 300 * 1024 * 1024;
+const UPDATE_INSTALL_RESULT_FILE: &str = "aster-launcher-update-result.txt";
 
 #[cfg(target_os = "windows")]
 fn is_store_package() -> bool {
@@ -72,6 +73,49 @@ pub enum UpdateDownloadEvent {
         chunk_length: usize,
     },
     Finished,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherUpdateInstallResult {
+    success: bool,
+    message: String,
+}
+
+fn parse_install_result(contents: &str) -> Option<LauncherUpdateInstallResult> {
+    let normalized = contents.trim_start_matches('\u{feff}').trim();
+    let (status, message) = normalized
+        .split_once('\n')
+        .map(|(status, message)| (status.trim(), message.trim()))
+        .unwrap_or((normalized, ""));
+
+    match status {
+        "ok" => Some(LauncherUpdateInstallResult {
+            success: true,
+            message: if message.is_empty() {
+                "Aster Launcher was updated successfully.".to_owned()
+            } else {
+                message.to_owned()
+            },
+        }),
+        "error" => Some(LauncherUpdateInstallResult {
+            success: false,
+            message: if message.is_empty() {
+                "The Windows installer could not complete the update.".to_owned()
+            } else {
+                message.to_owned()
+            },
+        }),
+        _ => None,
+    }
+}
+
+#[tauri::command]
+pub fn take_launcher_update_result() -> Option<LauncherUpdateInstallResult> {
+    let result_path = std::env::temp_dir().join(UPDATE_INSTALL_RESULT_FILE);
+    let contents = std::fs::read_to_string(&result_path).ok()?;
+    let _ = std::fs::remove_file(result_path);
+    parse_install_result(&contents)
 }
 
 fn canonical_payload(update: &LauncherUpdateManifest) -> String {
@@ -341,6 +385,37 @@ fn powershell_literal(path: &Path) -> String {
     path.to_string_lossy().replace('\'', "''")
 }
 
+#[cfg(target_os = "windows")]
+fn update_helper_script(
+    parent_process_id: u32,
+    result_path: &Path,
+    installer: &Path,
+    current_executable: &Path,
+) -> String {
+    format!(
+        "$ErrorActionPreference='Stop'\n\
+         $resultPath = '{}'\n\
+         try {{\n\
+           Wait-Process -Id {} -ErrorAction SilentlyContinue\n\
+           $installer = Start-Process -FilePath '{}' -ArgumentList @('/S','/UPDATE') -WindowStyle Hidden -Wait -PassThru\n\
+           if ($installer.ExitCode -eq 0) {{\n\
+             Set-Content -LiteralPath $resultPath -Value \"ok`nAster Launcher was updated successfully.\" -Encoding UTF8\n\
+           }} else {{\n\
+             Set-Content -LiteralPath $resultPath -Value \"error`nThe Windows installer exited with code $($installer.ExitCode).\" -Encoding UTF8\n\
+           }}\n\
+         }} catch {{\n\
+           Set-Content -LiteralPath $resultPath -Value \"error`nThe Windows installer failed: $($_.Exception.Message)\" -Encoding UTF8\n\
+         }} finally {{\n\
+           Start-Process -FilePath '{}' -WindowStyle Hidden\n\
+           Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\n\
+         }}\n",
+        powershell_literal(result_path),
+        parent_process_id,
+        powershell_literal(installer),
+        powershell_literal(current_executable),
+    )
+}
+
 #[tauri::command]
 pub fn install_launcher_update(app: AppHandle, installer_path: String) -> Result<(), String> {
     if is_store_package() {
@@ -381,15 +456,13 @@ pub fn install_launcher_update(app: AppHandle, installer_path: String) -> Result
             "aster-launcher-update-helper-{}.ps1",
             std::process::id()
         ));
-        let script = format!(
-            "$ErrorActionPreference='SilentlyContinue'\n\
-             Wait-Process -Id {} -ErrorAction SilentlyContinue\n\
-             $installer = Start-Process -FilePath '{}' -ArgumentList '/S' -WindowStyle Hidden -Wait -PassThru\n\
-             if ($installer.ExitCode -eq 0) {{ Start-Process -FilePath '{}' -WindowStyle Hidden }}\n\
-             Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\n",
+        let result_path = temp.join(UPDATE_INSTALL_RESULT_FILE);
+        let _ = std::fs::remove_file(&result_path);
+        let script = update_helper_script(
             std::process::id(),
-            powershell_literal(&installer),
-            powershell_literal(&current_executable),
+            &result_path,
+            &installer,
+            &current_executable,
         );
         std::fs::write(&helper_path, script)
             .map_err(|_| "The update installer helper could not be created.".to_owned())?;
@@ -417,9 +490,11 @@ pub fn install_launcher_update(app: AppHandle, installer_path: String) -> Result
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "windows")]
+    use super::update_helper_script;
     use super::{
-        canonical_payload, update_file_path, update_manifest_asset_url, verify_update,
-        GithubRelease, GithubReleaseAsset, LauncherUpdateManifest,
+        canonical_payload, parse_install_result, update_file_path, update_manifest_asset_url,
+        verify_update, GithubRelease, GithubReleaseAsset, LauncherUpdateManifest,
     };
 
     fn example_update() -> LauncherUpdateManifest {
@@ -432,6 +507,40 @@ mod tests {
             sha256: "a".repeat(64),
             signature: "kITVjEqwmqRIj0ptrja95bSUm8j9GyT4MtxsFjetY7M8HxcH37bMKzzh//NM6wV2Y4Tdj8yn/Ka/2N2lfuyXDQ==".to_owned(),
         }
+    }
+
+    #[test]
+    fn parses_successful_installer_result() {
+        let result =
+            parse_install_result("\u{feff}ok\nAster Launcher was updated successfully.\r\n")
+                .expect("result should parse");
+
+        assert!(result.success);
+        assert_eq!(result.message, "Aster Launcher was updated successfully.");
+    }
+
+    #[test]
+    fn parses_failed_installer_result() {
+        let result = parse_install_result("error\nThe Windows installer exited with code 2.")
+            .expect("result should parse");
+
+        assert!(!result.success);
+        assert!(result.message.contains("code 2"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_installer_helper_uses_nsis_update_mode() {
+        let script = update_helper_script(
+            42,
+            std::path::Path::new(r"C:\Temp\result.txt"),
+            std::path::Path::new(r"C:\Temp\Aster Launcher_0.5.4_x64-setup.exe"),
+            std::path::Path::new(r"C:\Users\Aster Launcher\aster-launcher.exe"),
+        );
+
+        assert!(script.contains("-ArgumentList @('/S','/UPDATE')"));
+        assert!(script.contains("Wait-Process -Id 42"));
+        assert!(script.contains("Start-Process -FilePath"));
     }
 
     #[test]

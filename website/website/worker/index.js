@@ -1,16 +1,17 @@
-const VERSION = "0.5.3";
 const REPOSITORY_URL =
   "https://github.com/asterlauncher/Aster-Launcher";
 const RELEASE_URL = `${REPOSITORY_URL}/releases`;
 const RELEASE_API_URL =
-  "https://api.github.com/repos/asterlauncher/Aster-Launcher/releases?per_page=20";
+  "https://api.github.com/repos/asterlauncher/Aster-Launcher/releases";
 const FONT_BASE64 = /*__FONT_DATA__*/ "";
 const ICON_BASE64 = /*__ICON_DATA__*/ "";
 const PREVIEW_BASE64 = /*__PREVIEW_DATA__*/ "";
 
-async function resolveLatestInstaller() {
+async function fetchReleaseData(suffix) {
   try {
-    const response = await fetch(RELEASE_API_URL, {
+    const response = await fetch(`${RELEASE_API_URL}${suffix}`, {
+      signal: AbortSignal.timeout(8000),
+      cache: "no-store",
       headers: {
         accept: "application/vnd.github+json",
         "user-agent": "Aster-Launcher-Website",
@@ -19,32 +20,52 @@ async function resolveLatestInstaller() {
     });
     if (!response.ok) return null;
 
-    const releases = await response.json();
-    if (!Array.isArray(releases)) return null;
-    const preferredTag = `app-v${VERSION}`;
-    const orderedReleases = [
-      ...releases.filter((release) => release?.tag_name === preferredTag),
-      ...releases.filter((release) => release?.tag_name !== preferredTag),
-    ];
-    const assets = orderedReleases.flatMap((release) =>
-      Array.isArray(release?.assets) ? release.assets : [],
-    );
-    const installer =
-      assets.find((asset) => /_x64-setup\.exe$/i.test(asset?.name ?? "")) ??
-      assets.find((asset) => /\.exe$/i.test(asset?.name ?? "")) ??
-      assets.find((asset) => /\.msi$/i.test(asset?.name ?? ""));
-
-    if (typeof installer?.browser_download_url !== "string") return null;
-    const download = new URL(installer.browser_download_url);
-    return download.protocol === "https:" && download.hostname === "github.com"
-      ? {
-          name: String(installer.name || `Aster-Launcher-${VERSION}-setup.exe`),
-          url: download.href,
-        }
-      : null;
+    return await response.json();
   } catch {
     return null;
   }
+}
+
+function normalizeRelease(release) {
+  if (!release || release.draft !== false || release.prerelease !== false) return null;
+  const version = /^app-v(\d+\.\d+\.\d+)$/.exec(release.tag_name ?? "")?.[1];
+  if (!version) return null;
+  return {
+    version,
+    tag: release.tag_name,
+    title: String(release.name || `Aster Launcher ${version}`),
+    notes: String(release.body || "Release notes are available on GitHub."),
+    url: `${RELEASE_URL}/tag/${encodeURIComponent(release.tag_name)}`,
+    assets: Array.isArray(release.assets) ? release.assets : [],
+  };
+}
+
+async function resolveLatestRelease() {
+  return normalizeRelease(await fetchReleaseData("/latest"));
+}
+
+function resolveInstaller(release) {
+  if (!release) return null;
+  const candidates = release.assets.flatMap((asset) => {
+    if (typeof asset?.name !== "string" || typeof asset.browser_download_url !== "string") return [];
+    try {
+      const url = new URL(asset.browser_download_url);
+      const expectedPrefix = `/asterlauncher/Aster-Launcher/releases/download/${release.tag}/`;
+      if (url.origin !== "https://github.com" || url.username || url.password || !url.pathname.startsWith(expectedPrefix)) return [];
+      return [{ name: asset.name, url: url.href }];
+    } catch {
+      return [];
+    }
+  });
+  return candidates.find((asset) => /[_-]x64-setup\.exe$/i.test(asset.name))
+    ?? candidates.find((asset) => /[_-]x64(?:[_-][\w-]+)?\.msi$/i.test(asset.name))
+    ?? null;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[character]);
 }
 
 const SITE_JS = `
@@ -318,6 +339,7 @@ a{color:inherit}
 .release-label{color:#a46ee3;font-size:15px}
 .release-label small{display:block;margin-top:5px;color:#5f5962;font-size:8px}
 .release h2{margin:0 0 8px;padding:0;border:0;font-size:17px}
+.release-notes{white-space:pre-wrap;overflow-wrap:anywhere}
 .page-content{animation:pageEnter .48s cubic-bezier(.2,.8,.2,1) both;transform-origin:50% 8%}
 .page-leaving .page-content{animation:pageExit .26s cubic-bezier(.4,0,1,1) both;pointer-events:none}
 .page-leaving .nav{transition:opacity .2s;opacity:.72}
@@ -370,6 +392,7 @@ function shell({ title, description, path, content }) {
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#0b0a0d">
   <meta name="description" content="${description}">
+  <link rel="canonical" href="https://asterlauncher.com${path}">
   <link rel="icon" href="/aster-icon.png" type="image/png">
   <title>${title} · Aster Launcher</title>
   <style>${styles}</style>
@@ -406,7 +429,8 @@ function shell({ title, description, path, content }) {
 </html>`;
 }
 
-function home() {
+function home(release) {
+  const VERSION = release?.version ?? "LATEST";
   return shell({
     title: "Download",
     description: `Aster Launcher ${VERSION} für Windows herunterladen.`,
@@ -495,160 +519,30 @@ function documentPage({ title, subtitle, path, body, action = "" }) {
   });
 }
 
-function changelog() {
+function changelog(latest, history) {
+  const releases = (Array.isArray(history) ? history : [])
+    .map(normalizeRelease)
+    .filter(Boolean);
+  const ordered = [
+    ...(latest ? [latest] : []),
+    ...releases.filter((release) => release.tag !== latest?.tag),
+  ];
   return documentPage({
-    title: `VERSION ${VERSION}`,
-    subtitle: "Secure Social Session Hotfix",
+    title: latest ? `VERSION ${latest.version}` : "VERSIONS",
+    subtitle: "Published Aster Launcher releases and updates",
     path: "/changelog",
-    action: `<a class="button green" href="/download">DOWNLOAD ${VERSION}</a>`,
-    body: `
+    action: `<a class="button green" href="/download">DOWNLOAD ${latest?.version ?? "LATEST"}</a>`,
+    body: ordered.length ? ordered.map((release) => `
       <section class="release">
-        <div class="release-label">${VERSION}<small>CURRENT</small></div>
+        <div class="release-label">${release.version}${release.tag === latest?.tag ? "<small>CURRENT</small>" : ""}</div>
         <div>
-          <h2>SECURE SOCIAL SESSION HOTFIX</h2>
-          <ul>
-            <li>Bestehende Social-Sitzungen werden vor einem neuen anonymen Login wiederhergestellt.</li>
-            <li>Social-Sitzungen bleiben durch verschlüsselte Windows-Speicherung auch nach Updates erhalten.</li>
-            <li>Weniger doppelte Profilabfragen und unnötige Datenbankanfragen.</li>
-            <li>Minecraft-Namen mit Unterstrich funktionieren in der Spielersuche.</li>
-            <li>Online-Spieler werden zuerst angezeigt und Verbindungsfehler können direkt erneut versucht werden.</li>
-          </ul>
-          <p><a href="${RELEASE_URL}" rel="noreferrer">Release auf GitHub ansehen →</a></p>
+          <h2>${escapeHtml(release.title)}</h2>
+          <p class="release-notes">${escapeHtml(release.notes)}</p>
+          <p><a href="${release.url}" rel="noreferrer">Release auf GitHub ansehen →</a></p>
         </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.5.2<small>RELIABILITY</small></div>
-        <div>
-          <h2>SOCIAL RELIABILITY HOTFIX</h2>
-          <ul>
-            <li>Bestehende Social-Sitzungen werden vor einem neuen anonymen Login wiederhergestellt.</li>
-            <li>Weniger doppelte Profilabfragen und unnötige Datenbankanfragen.</li>
-            <li>Minecraft-Namen mit Unterstrich funktionieren in der Spielersuche.</li>
-            <li>Online-Spieler werden zuerst angezeigt und Verbindungsfehler können direkt erneut versucht werden.</li>
-          </ul>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.5.1<small>SHARING</small></div>
-        <div>
-          <h2>SOCIAL SHARING &amp; PUBLIC BUILD FIX</h2>
-          <ul>
-            <li>Eigene Modpacks direkt aus der Bibliothek im Chat auswählen und automatisch exportieren.</li>
-            <li>Empfangene Modpacks mit einem Klick in My Modpacks installieren.</li>
-            <li>Download-Fortschritt und Installationsfehler direkt im Launcher verfolgen.</li>
-            <li>Microsoft-Login, Friends und Presence funktionieren nun in öffentlichen Test-Builds.</li>
-          </ul>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.5.0<small>SOCIAL</small></div>
-        <div>
-          <h2>ASTER SOCIAL</h2>
-          <ul>
-            <li>Freunde anhand ihres Minecraft-Namens finden und Anfragen senden.</li>
-            <li>Private Chats mit Screenshots und Modpack-Dateien.</li>
-            <li>Neu gestaltete Benachrichtigungen und Desktop-Hinweise.</li>
-            <li>Überarbeitetes Einstellungsmenü mit Speicher-, Präsenz- und Datenschutzoptionen.</li>
-          </ul>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.4.8<small>QUALITY</small></div>
-        <div>
-          <h2>CLOSED ALPHA QUALITY UPDATE</h2>
-          <ul>
-            <li>Aktuelle Minecraft-Versionen aus Mojangs Versionsdienst mit zuverlässiger Fallback-Liste.</li>
-            <li>Automatische Aktualisierung des aktiven Minecraft-Skins.</li>
-            <li>Korrigierter Update-Fortschritt nach einem Neustart des Launchers.</li>
-            <li>Einfachere Sortiersteuerung und weitere Launcher-Verbesserungen.</li>
-            <li>Aster-Website mit direktem Installer-Download und rechtlichen Informationen.</li>
-          </ul>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.4.7<small>FOUNDATION</small></div>
-        <div>
-          <h2>CLOSED ALPHA FOUNDATION UPDATE</h2>
-          <ul>
-            <li>Microsoft- und Minecraft-Anmeldung, Besitzprüfung und Profilanzeige.</li>
-            <li>Vanilla-, Fabric- und Forge-Instanzen mit echtem Minecraft-Start.</li>
-            <li>Modrinth- und CurseForge-Suche, Downloads und unterstützte Abhängigkeiten.</li>
-            <li>Eigene Modpacks erstellen, importieren, exportieren und mit Symbolen versehen.</li>
-            <li>Download-Warteschlange, Benachrichtigungen und signierte Launcher-Updates.</li>
-            <li>Stabileres Forge-Setup, korrigierter Export und verbesserte Windows-Integration.</li>
-          </ul>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.4.6<small>WINDOWS BUILD</small></div>
-        <div>
-          <h2>PACKAGING &amp; DISTRIBUTION</h2>
-          <p>Windows-Installer, Store-Paketvorbereitung, neue Taskleisten-Symbole und eine überarbeitete Release-Pipeline für reproduzierbare Builds.</p>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.4.5<small>POLISH</small></div>
-        <div>
-          <h2>NATIVE WINDOWS POLISH</h2>
-          <p>Neues Aster-Symbol, verbesserte Fensterintegration, korrigierte Sidebar-Abstände und stabilere native Hintergrundprozesse.</p>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.4.4<small>SECURITY</small></div>
-        <div>
-          <h2>SAFETY &amp; LIVE PRESENCE</h2>
-          <p>Anonyme Online-Anzeige, lokale Sicherheitsprüfungen, Microsoft-Defender-Integration und ein echtes Benachrichtigungssystem.</p>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.4.3<small>SHARING</small></div>
-        <div>
-          <h2>DOWNLOADS &amp; MODPACK SHARING</h2>
-          <p>Download-Center mit Fortschritt, scrollbare Warteschlangen sowie Modpack-Import und -Export zum Teilen eigener Instanzen.</p>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.4.2<small>FORGE</small></div>
-        <div>
-          <h2>FORGE SUPPORT</h2>
-          <p>Forge-Instanzen, Loader-Installation und zusätzliche Startdiagnosen für inkompatible Java-, Minecraft- und Mod-Konfigurationen.</p>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.4.1<small>CONTENT</small></div>
-        <div>
-          <h2>DEPENDENCIES &amp; INSTALL STATE</h2>
-          <p>Persistente Installationszustände, automatische unterstützte Mod-Abhängigkeiten, eigene Modpack-Symbole und zuverlässigere Downloads.</p>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.4.0<small>LAUNCH CORE</small></div>
-        <div>
-          <h2>REAL MINECRAFT LAUNCHING</h2>
-          <p>Microsoft-, Xbox- und Minecraft-Anmeldung, Besitzprüfung, Java-Vorbereitung, Spieldateien und der erste echte Minecraft-Start.</p>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.3.0<small>INSTANCES</small></div>
-        <div>
-          <h2>INSTANCE MANAGEMENT</h2>
-          <p>Eigene Vanilla- und Fabric-Instanzen, Inhaltsverwaltung, Welten, Screenshots, Duplizieren, Löschen und lokale Ordner.</p>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.2.0<small>DISCOVERY</small></div>
-        <div>
-          <h2>MOD &amp; MODPACK DISCOVERY</h2>
-          <p>Modrinth- und CurseForge-Suche, Versions- und Loader-Filter, Release-Auswahl, Installationsdialoge und Account-Grundlagen.</p>
-        </div>
-      </section>
-      <section class="release">
-        <div class="release-label">0.1.0<small>FIRST BUILD</small></div>
-        <div><h2>UI PROTOTYPE</h2><p>Erste Launcher-Oberfläche mit Home, Instanzbibliothek, Entdecken, Downloads, Konten, Einstellungen und dem ursprünglichen Aster-Designsystem.</p></div>
-      </section>`,
+      </section>`).join("") : `<p>Release notes are temporarily unavailable. <a href="${RELEASE_URL}" rel="noreferrer">View releases on GitHub →</a></p>`,
   });
 }
-
 function privacy() {
   return documentPage({
     title: "DATA & PRIVACY",
@@ -695,7 +589,7 @@ function legal() {
       <h2>MINECRAFT UND COMMUNITY-INHALTE</h2>
       <p>Aster verkauft oder verteilt Minecraft nicht. Ein separates, rechtmäßig erworbenes Minecraft: Java Edition-Konto ist erforderlich. Mods, Modpacks und Ressourcenpakete stammen von unabhängigen Dritten. Deren Rechte, Lizenzen und Regeln müssen beachtet werden.</p>
       <h2>CLOSED ALPHA</h2>
-      <p>Version ${VERSION} ist eine Vorabversion. Fehler, Abstürze, inkompatible Mods oder Datenverluste können nicht ausgeschlossen werden. Vor Änderungen an Instanzen und Welten sollten Sicherungskopien erstellt werden. Gesetzliche Ansprüche bleiben unberührt.</p>
+      <p>Aster Launcher befindet sich in der Closed Alpha. Fehler, Abstürze, inkompatible Mods oder Datenverluste können nicht ausgeschlossen werden. Vor Änderungen an Instanzen und Welten sollten Sicherungskopien erstellt werden. Gesetzliche Ansprüche bleiben unberührt.</p>
       <p>Cosmetics, Aster Credits und Aster Subscription sind derzeit nur Vorschauen. Über diese Website werden keine Zahlungen angeboten.</p>`,
   });
 }
@@ -732,7 +626,7 @@ export default {
   async fetch(request) {
     const { pathname } = new URL(request.url);
     if (pathname === "/download") {
-      const installer = await resolveLatestInstaller();
+      const installer = resolveInstaller(await resolveLatestRelease());
       if (!installer) {
         return new Response(
           "The Aster Launcher installer is temporarily unavailable. Please try again shortly.",
@@ -799,7 +693,13 @@ export default {
         headers: { "content-type": "text/plain; charset=utf-8", ...securityHeaders },
       });
     }
-    return new Response(render(), {
+    const release = pathname === "/" || pathname === "/changelog"
+      ? await resolveLatestRelease()
+      : null;
+    const history = pathname === "/changelog"
+      ? await fetchReleaseData("?per_page=100")
+      : null;
+    return new Response(render(release, history), {
       headers: {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-cache, no-store, must-revalidate",

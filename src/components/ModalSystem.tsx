@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from "framer-motion";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -25,8 +26,10 @@ import { Button } from "./ui";
 export function ModalSystem() {
   const {
     account,
+    asterAccount,
     modal,
     closeModal,
+    openModal,
     notify,
     loggedIn,
     authError,
@@ -34,7 +37,29 @@ export function ModalSystem() {
     authBusy,
     beginMicrosoftLogin,
     signOut,
+    asterAuthBusy,
+    asterAuthError,
+    signInAster,
+    registerAster,
+    signOutAster,
   } = useAppStore();
+  const [asterMode, setAsterMode] = useState<"signin" | "register">("signin");
+  const [asterEmail, setAsterEmail] = useState("");
+  const [asterPassword, setAsterPassword] = useState("");
+  const [asterUsername, setAsterUsername] = useState("");
+
+  useEffect(() => {
+    if (asterAuthError?.includes("Use Sign in")) setAsterMode("signin");
+  }, [asterAuthError]);
+
+  const submitAsterAuth = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (asterMode === "register") {
+      void registerAster(asterUsername, asterEmail, asterPassword);
+    } else {
+      void signInAster(asterEmail, asterPassword);
+    }
+  };
 
   const complete = (title: string, message: string) => {
     notify({ title, message, tone: "success" });
@@ -74,6 +99,74 @@ export function ModalSystem() {
             </button>
 
             {modal === "friends" && <FriendsHub />}
+
+            {modal === "aster-auth" && (
+              <>
+                <div className="modal-icon"><UserRound size={22} /></div>
+                <h2>{asterMode === "signin" ? "Sign in to Aster" : "Create Aster account"}</h2>
+                <p className="modal-copy">
+                  Your Aster account is used for friends, chat, Credits and community mods. Microsoft remains separate for Minecraft.
+                </p>
+                <div className="aster-auth-tabs" role="tablist">
+                  <button type="button" className={asterMode === "signin" ? "active" : ""} onClick={() => setAsterMode("signin")}>Sign in</button>
+                  <button type="button" className={asterMode === "register" ? "active" : ""} onClick={() => setAsterMode("register")}>Register</button>
+                </div>
+                <form className="aster-auth-form" onSubmit={submitAsterAuth}>
+                  {asterMode === "register" && (
+                    <label>
+                      <span>Aster name</span>
+                      <input value={asterUsername} onChange={(event) => setAsterUsername(event.target.value)} autoComplete="username" placeholder="Your display name" minLength={3} maxLength={16} required />
+                      <small>3–16 letters, numbers or underscores</small>
+                    </label>
+                  )}
+                  <label>
+                    <span>Email</span>
+                    <input type="email" value={asterEmail} onChange={(event) => setAsterEmail(event.target.value)} autoComplete="email" placeholder="you@example.com" required />
+                  </label>
+                  <label>
+                    <span>Password</span>
+                    <input type="password" value={asterPassword} onChange={(event) => setAsterPassword(event.target.value)} autoComplete={asterMode === "register" ? "new-password" : "current-password"} placeholder="At least 8 characters" minLength={8} required />
+                  </label>
+                  {asterAuthError && <p className="aster-auth-error">{asterAuthError}</p>}
+                  {asterMode === "register" && (
+                    <p className="aster-migration-note"><ShieldCheck size={13} /> Existing friends, messages and uploads on this device are kept automatically.</p>
+                  )}
+                  <div className="modal-actions">
+                    <Button type="submit" variant="primary" disabled={asterAuthBusy}>
+                      <LogIn size={14} /> {asterAuthBusy ? "Please wait..." : asterMode === "signin" ? "Sign in" : "Create account"}
+                    </Button>
+                  </div>
+                </form>
+              </>
+            )}
+
+            {modal === "aster-account" && (
+              <>
+                <div className="modal-icon"><UserRound size={22} /></div>
+                <h2>Aster account</h2>
+                {asterAccount ? (
+                  <>
+                    <div className="aster-account-card">
+                      <span>{asterAccount.username.charAt(0).toUpperCase()}</span>
+                      <div><strong>{asterAccount.username}</strong><small>{asterAccount.email}</small></div>
+                      <ShieldCheck size={17} />
+                    </div>
+                    <p className="modal-copy">Used across Aster for friends, chat, Credits and community content.</p>
+                    <div className="modal-actions">
+                      <Button variant="ghost" disabled={asterAuthBusy} onClick={() => void signOutAster()}><LogOut size={14} /> Sign out</Button>
+                      <Button variant="primary" onClick={closeModal}>Done</Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="modal-copy">No Aster account is signed in on this device.</p>
+                    <div className="modal-actions">
+                      <Button variant="primary" onClick={() => openModal("aster-auth")}>Sign in</Button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
 
             {modal === "aster-subscription" && (
               <>

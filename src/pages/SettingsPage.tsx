@@ -10,34 +10,60 @@ import {
   Download,
   FolderOpen,
   Gauge,
+  Gift,
+  Gavel,
   HardDrive,
   Languages,
   LoaderCircle,
   MemoryStick,
   MonitorCog,
+  Puzzle,
   Radio,
   RefreshCw,
   RotateCcw,
   ShieldCheck,
+  Trash2,
+  Send,
   SlidersHorizontal,
   Sparkles,
   Terminal,
   Users,
   WandSparkles,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { requestAsterGiftRefresh } from "../components/AsterGiftInbox";
+import { RamSafetyWarning } from "../components/RamSafetyWarning";
 import { useLauncherSettings } from "../hooks/useLauncherSettings";
 import { useLauncherUpdater } from "../hooks/useLauncherUpdater";
 import { isTauriRuntime } from "../services/auth";
 import {
+  approveBtd6Submission,
+  deleteBtd6Submission,
+  loadBtd6ModeratorStatus,
+  loadBtd6SubmissionQueue,
+  type Btd6CommunityMod,
+} from "../services/btd6";
+import {
+  getSocialAuthRetryDelay,
+  loadAsterGiftAdminStatus,
+  sendAsterGift,
+} from "../services/social";
+import {
+  DEFAULT_LAUNCHER_SETTINGS,
   resetLauncherSettings,
   updateLauncherSettings,
 } from "../services/settings";
 import { useAppStore } from "../store/AppStore";
 
-type SettingsSection = "launcher" | "minecraft" | "storage" | "privacy";
+type SettingsSection =
+  | "launcher"
+  | "minecraft"
+  | "storage"
+  | "privacy"
+  | "gifts"
+  | "btd6-moderation";
 
-const sections: {
+const baseSections: {
   id: SettingsSection;
   label: string;
   detail: string;
@@ -151,19 +177,216 @@ function SettingsGroup({
   );
 }
 
-export function SettingsPage() {
-  const { notify } = useAppStore();
+export function SettingsPage({
+  launcherOnly = false,
+  btd6Moderation = false,
+}: {
+  launcherOnly?: boolean;
+  btd6Moderation?: boolean;
+}) {
+  const { asterAccount: account, asterLoggedIn: loggedIn, notify } = useAppStore();
   const settings = useLauncherSettings();
   const updater = useLauncherUpdater();
   const [section, setSection] = useState<SettingsSection>("launcher");
   const [openingFolder, setOpeningFolder] = useState(false);
+  const [giftAdminStatus, setGiftAdminStatus] = useState<
+    "idle" | "checking" | "allowed" | "denied" | "error"
+  >("idle");
+  const [giftAdminError, setGiftAdminError] = useState<string | null>(null);
+  const [giftRetryKey, setGiftRetryKey] = useState(0);
+  const [giftRetrySeconds, setGiftRetrySeconds] = useState(0);
+  const [sendingGift, setSendingGift] = useState(false);
+  const [giftSentTo, setGiftSentTo] = useState<string | null>(null);
+  const [giftDraft, setGiftDraft] = useState({
+    recipientName: "",
+    amount: 100,
+    title: "A gift from Aster",
+    message: "Thanks for being part of Aster Launcher!",
+  });
+  const [btd6ModeratorStatus, setBtd6ModeratorStatus] = useState<
+    "idle" | "checking" | "allowed" | "denied" | "error"
+  >("idle");
+  const [btd6Submissions, setBtd6Submissions] = useState<Btd6CommunityMod[]>([]);
+  const [btd6ModerationBusy, setBtd6ModerationBusy] = useState<string | null>(null);
+  const [btd6ModerationError, setBtd6ModerationError] = useState<string | null>(null);
+  const ownerCandidate = loggedIn && account?.username.toLowerCase() === "synoi";
+  const giftOwnerCandidate = !launcherOnly && ownerCandidate;
+  const btd6OwnerCandidate = btd6Moderation && ownerCandidate;
+  const sections = useMemo(
+    () => {
+      if (launcherOnly) {
+        const launcherSections = baseSections.filter(({ id }) => id === "launcher");
+        return btd6OwnerCandidate
+          ? [
+              ...launcherSections,
+              {
+                id: "btd6-moderation" as const,
+                label: "BTD6 Mods",
+                detail: "Review & approval",
+                icon: Gavel,
+              },
+            ]
+          : launcherSections;
+      }
+      return giftOwnerCandidate
+        ? [
+            ...baseSections,
+            {
+              id: "gifts" as const,
+              label: "Gift Console",
+              detail: "Owner access",
+              icon: Gift,
+            },
+          ]
+        : baseSections;
+    },
+    [btd6OwnerCandidate, giftOwnerCandidate, launcherOnly],
+  );
+
+  useEffect(() => {
+    if (!giftOwnerCandidate || !account) {
+      setGiftAdminStatus("idle");
+      setGiftAdminError(null);
+      setGiftRetrySeconds(0);
+      if (section === "gifts") setSection("launcher");
+      return;
+    }
+
+    let disposed = false;
+    setGiftAdminStatus("checking");
+    setGiftAdminError(null);
+    void loadAsterGiftAdminStatus(account)
+      .then((allowed) => {
+        if (disposed) return;
+        setGiftAdminStatus(allowed ? "allowed" : "denied");
+        setGiftRetrySeconds(0);
+      })
+      .catch((error) => {
+        if (disposed) return;
+        setGiftAdminStatus("error");
+        setGiftRetrySeconds(
+          Math.max(0, Math.ceil(getSocialAuthRetryDelay() / 1_000)),
+        );
+        setGiftAdminError(
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [account, giftOwnerCandidate, giftRetryKey, section]);
+
+  useEffect(() => {
+    if (!giftOwnerCandidate || giftRetrySeconds <= 0) return;
+    const timer = window.setInterval(() => {
+      const seconds = Math.max(
+        0,
+        Math.ceil(getSocialAuthRetryDelay() / 1_000),
+      );
+      setGiftRetrySeconds(seconds);
+      if (seconds === 0) {
+        window.clearInterval(timer);
+        setGiftRetryKey((value) => value + 1);
+      }
+    }, 1_000);
+    return () => window.clearInterval(timer);
+  }, [giftOwnerCandidate, giftRetrySeconds > 0]);
+
+  useEffect(() => {
+    if (section === "btd6-moderation" && !btd6OwnerCandidate) setSection("launcher");
+  }, [btd6OwnerCandidate, section]);
+
+  const refreshBtd6Moderation = async () => {
+    if (!btd6OwnerCandidate || !account) return;
+    setBtd6ModeratorStatus("checking");
+    setBtd6ModerationError(null);
+    try {
+      const allowed = await loadBtd6ModeratorStatus(account);
+      setBtd6ModeratorStatus(allowed ? "allowed" : "denied");
+      setBtd6Submissions(allowed ? await loadBtd6SubmissionQueue(account) : []);
+    } catch (error) {
+      setBtd6ModeratorStatus("error");
+      setBtd6ModerationError(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  useEffect(() => {
+    if (section !== "btd6-moderation" || !btd6OwnerCandidate) return;
+    void refreshBtd6Moderation();
+    // The moderation screen refreshes whenever the verified account or section changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, btd6OwnerCandidate, section]);
+
+  const moderateBtd6Submission = async (
+    mod: Btd6CommunityMod,
+    action: "approve" | "delete",
+  ) => {
+    if (!account || btd6ModeratorStatus !== "allowed") return;
+    setBtd6ModerationBusy(mod.id);
+    try {
+      if (action === "approve") await approveBtd6Submission(account, mod.id);
+      else await deleteBtd6Submission(account, mod);
+      notify({
+        title: action === "approve" ? "BTD6 mod approved" : "BTD6 mod deleted",
+        message: action === "approve"
+          ? `${mod.displayName} is now available in the public catalog.`
+          : `${mod.displayName} and its uploaded files were removed.`,
+        tone: "success",
+      });
+      await refreshBtd6Moderation();
+    } catch (error) {
+      notify({ title: "Moderation failed", message: String(error), tone: "error" });
+    } finally {
+      setBtd6ModerationBusy(null);
+    }
+  };
+
+  const sendGift = async () => {
+    if (!account || giftAdminStatus !== "allowed" || sendingGift) return;
+    setSendingGift(true);
+    setGiftSentTo(null);
+    try {
+      await sendAsterGift(account, giftDraft);
+      setGiftSentTo(giftDraft.recipientName.trim());
+      notify({
+        title: "Gift sent",
+        message: `${giftDraft.amount.toLocaleString()} AC are waiting for ${giftDraft.recipientName.trim()}.`,
+        tone: "success",
+      });
+      requestAsterGiftRefresh();
+      setGiftDraft((current) => ({
+        ...current,
+        recipientName: "",
+      }));
+    } catch (error) {
+      notify({
+        title: "Gift could not be sent",
+        message: error instanceof Error ? error.message : String(error),
+        tone: "error",
+      });
+    } finally {
+      setSendingGift(false);
+    }
+  };
 
   const reset = () => {
-    resetLauncherSettings();
+    if (launcherOnly) {
+      updateLauncherSettings({
+        automaticUpdateChecks:
+          DEFAULT_LAUNCHER_SETTINGS.automaticUpdateChecks,
+        activityNotifications:
+          DEFAULT_LAUNCHER_SETTINGS.activityNotifications,
+        reducedMotion: DEFAULT_LAUNCHER_SETTINGS.reducedMotion,
+      });
+    } else {
+      resetLauncherSettings();
+    }
     setSection("launcher");
     notify({
       title: "Settings reset",
-      message: "Aster defaults were restored and saved.",
+      message: launcherOnly
+        ? "Launcher defaults were restored and saved."
+        : "Aster defaults were restored and saved.",
       tone: "info",
     });
   };
@@ -206,7 +429,13 @@ export function SettingsPage() {
         <div>
           <span className="settings-v2-kicker">ASTER CONTROL CENTER</span>
           <h1>Settings</h1>
-          <p>Configure the launcher, Minecraft runtime, and your privacy.</p>
+          <p>
+            {btd6Moderation
+              ? "Configure the launcher and review Bloons TD 6 community mods."
+              : launcherOnly
+                ? "Configure launcher updates, activity, and interface."
+              : "Configure the launcher, Minecraft runtime, and your privacy."}
+          </p>
         </div>
         <div className="settings-v2-version">
           <span>
@@ -413,6 +642,7 @@ export function SettingsPage() {
                     Do not allocate all system memory.
                   </span>
                 </div>
+                <RamSafetyWarning allocatedGb={settings.memoryGb} />
               </SettingsGroup>
 
               <SettingsGroup
@@ -549,8 +779,224 @@ export function SettingsPage() {
               </div>
             </>
           )}
+
+          {section === "gifts" && giftOwnerCandidate && (
+            <>
+              <SettingsGroup
+                eyebrow="OWNER ONLY"
+                title="Aster Gift Console"
+                description="Send a personal popup and Aster Credits to a player who has opened Aster before."
+              >
+                <div className="settings-gift-console">
+                  <div className="settings-gift-status">
+                    <span className="settings-v2-row-icon">
+                      <Gift size={16} />
+                    </span>
+                    <div>
+                      <strong>Gift delivery service</strong>
+                      <p>
+                        {giftAdminStatus === "allowed"
+                          ? "Owner identity verified. Gifts are stored securely until claimed."
+                          : giftAdminStatus === "checking"
+                            ? "Verifying synoi with Aster Social..."
+                            : giftRetrySeconds > 0
+                              ? `Aster Social is cooling down. Owner verification retries automatically in ${giftRetrySeconds}s.`
+                            : giftAdminStatus === "denied"
+                              ? "This Aster Social identity is not registered as the owner."
+                              : giftAdminError ??
+                                "Connect Aster Social to verify owner access."}
+                      </p>
+                    </div>
+                    <SettingBadge
+                      tone={
+                        giftAdminStatus === "allowed" ? "purple" : "neutral"
+                      }
+                    >
+                      {giftAdminStatus === "allowed"
+                        ? "OWNER VERIFIED"
+                        : giftAdminStatus === "checking"
+                          ? "CHECKING"
+                          : giftRetrySeconds > 0
+                            ? `WAIT ${giftRetrySeconds}s`
+                          : "LOCKED"}
+                    </SettingBadge>
+                  </div>
+
+                  <form
+                    className="settings-gift-form"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void sendGift();
+                    }}
+                  >
+                    <label className="settings-gift-field">
+                      <span>MINECRAFT RECIPIENT</span>
+                      <input
+                        value={giftDraft.recipientName}
+                        onChange={(event) =>
+                          setGiftDraft((current) => ({
+                            ...current,
+                            recipientName: event.target.value,
+                          }))
+                        }
+                        maxLength={16}
+                        placeholder="Player name"
+                        autoComplete="off"
+                      />
+                    </label>
+                    <label className="settings-gift-field is-amount">
+                      <span>ASTER CREDITS</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={100000}
+                        step={1}
+                        value={giftDraft.amount}
+                        onChange={(event) =>
+                          setGiftDraft((current) => ({
+                            ...current,
+                            amount: Number(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="settings-gift-field">
+                      <span>POPUP TITLE</span>
+                      <input
+                        value={giftDraft.title}
+                        onChange={(event) =>
+                          setGiftDraft((current) => ({
+                            ...current,
+                            title: event.target.value,
+                          }))
+                        }
+                        maxLength={64}
+                        placeholder="A gift from Aster"
+                      />
+                    </label>
+                    <label className="settings-gift-field is-message">
+                      <span>PERSONAL MESSAGE</span>
+                      <textarea
+                        value={giftDraft.message}
+                        onChange={(event) =>
+                          setGiftDraft((current) => ({
+                            ...current,
+                            message: event.target.value,
+                          }))
+                        }
+                        maxLength={280}
+                        rows={4}
+                        placeholder="Write a short message..."
+                      />
+                      <small>{giftDraft.message.length}/280</small>
+                    </label>
+                    <div className="settings-gift-submit">
+                      <p>
+                        {giftSentTo
+                          ? `Last gift sent to ${giftSentTo}.`
+                          : "The recipient sees the existing animated chest popup on their next inbox refresh."}
+                      </p>
+                      <button
+                        type="submit"
+                        className="settings-v2-action is-primary"
+                        disabled={
+                          sendingGift ||
+                          giftAdminStatus !== "allowed" ||
+                          !giftDraft.recipientName.trim()
+                        }
+                      >
+                        {sendingGift ? (
+                          <LoaderCircle className="spin" size={13} />
+                        ) : (
+                          <Send size={13} />
+                        )}
+                        {sendingGift ? "Sending..." : "Send gift"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </SettingsGroup>
+
+              <div className="settings-v2-info-card is-purple">
+                <ShieldCheck size={19} />
+                <div>
+                  <strong>Hidden UI + server authorization</strong>
+                  <p>
+                    Only synoi sees this section, and Supabase verifies the
+                    registered owner identity again before every delivery.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+
+          {section === "btd6-moderation" && btd6OwnerCandidate && (
+            <>
+              <SettingsGroup
+                eyebrow="OWNER ONLY"
+                title="BTD6 Mod Moderation"
+                description="Review scanned community uploads before they become downloadable in Aster."
+              >
+                <div className="settings-btd6-moderation">
+                  <div className="settings-gift-status">
+                    <span className="settings-v2-row-icon"><Gavel size={16} /></span>
+                    <div>
+                      <strong>Community catalog moderation</strong>
+                      <p>
+                        {btd6ModeratorStatus === "allowed"
+                          ? `${btd6Submissions.filter((mod) => mod.status === "pending").length} submission(s) waiting for review.`
+                          : btd6ModeratorStatus === "checking"
+                            ? "Verifying synoi and loading the private queue..."
+                            : btd6ModeratorStatus === "denied"
+                              ? "This Aster Social identity is not the registered owner."
+                              : btd6ModerationError ?? "The moderation service is unavailable."}
+                      </p>
+                    </div>
+                    <button type="button" className="settings-v2-action" onClick={() => void refreshBtd6Moderation()} disabled={btd6ModeratorStatus === "checking"}>
+                      <RefreshCw className={btd6ModeratorStatus === "checking" ? "spin" : ""} size={13} /> Refresh
+                    </button>
+                  </div>
+
+                  <div className="settings-btd6-queue">
+                    {btd6Submissions.map((mod) => (
+                      <article key={mod.id} className={`status-${mod.status}`}>
+                        <span><Puzzle size={20} /></span>
+                        <div>
+                          <header><strong>{mod.displayName}</strong><b>{mod.status.toUpperCase()}</b></header>
+                          <p>{mod.description || mod.fileName}</p>
+                          <small>v{mod.version} · {(mod.sizeBytes / 1024 / 1024).toFixed(1)} MB · SHA {mod.sha256.slice(0, 10)}… · {mod.riskSignals.length} warning(s)</small>
+                        </div>
+                        <div className="settings-btd6-review-actions">
+                          {mod.status !== "approved" && (
+                            <button type="button" className="approve" disabled={btd6ModerationBusy === mod.id} onClick={() => void moderateBtd6Submission(mod, "approve")}><Check size={13} /> Approve</button>
+                          )}
+                          <button type="button" className="delete" disabled={btd6ModerationBusy === mod.id} onClick={() => void moderateBtd6Submission(mod, "delete")}><Trash2 size={13} /> Delete</button>
+                        </div>
+                      </article>
+                    ))}
+                    {btd6ModeratorStatus === "allowed" && !btd6Submissions.length && (
+                      <div className="settings-btd6-empty"><ShieldCheck size={25} /><strong>Queue is empty</strong><span>New uploads will appear here automatically.</span></div>
+                    )}
+                  </div>
+                </div>
+              </SettingsGroup>
+
+              <div className="settings-v2-info-card is-purple">
+                <ShieldCheck size={19} />
+                <div><strong>Hidden UI + server authorization</strong><p>Only synoi sees this button. Supabase verifies the registered owner before approval or deletion.</p></div>
+              </div>
+            </>
+          )}
         </motion.div>
       </div>
     </div>
   );
+}
+
+export function LauncherOnlySettingsPage() {
+  return <SettingsPage launcherOnly />;
+}
+
+export function Btd6SettingsPage() {
+  return <SettingsPage launcherOnly btd6Moderation />;
 }

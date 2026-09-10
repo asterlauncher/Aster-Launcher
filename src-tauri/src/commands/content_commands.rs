@@ -34,6 +34,7 @@ pub async fn get_content_releases(
     provider: String,
     project_id: String,
     game_version: Option<String>,
+    loader: Option<String>,
     offset: usize,
     limit: usize,
 ) -> Result<crate::models::content::ContentReleasePage, ContentErrorPayload> {
@@ -41,6 +42,7 @@ pub async fn get_content_releases(
         &provider,
         &project_id,
         game_version.as_deref(),
+        loader.as_deref(),
         offset,
         limit,
     )

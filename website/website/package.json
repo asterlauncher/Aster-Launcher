@@ -1,6 +1,6 @@
 {
   "name": "aster-launcher-website",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "private": true,
   "type": "module",
   "engines": {
@@ -9,8 +9,10 @@
   "scripts": {
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build.mjs",
-    "cloudflare:login": "npx wrangler login",
-    "deploy:cloudflare": "npm run build && npx wrangler deploy",
+    "cloudflare:login": "npx --yes wrangler@latest login",
+    "cloudflare:whoami": "npx --yes wrangler@latest whoami",
+    "cloudflare:check": "npm test && npm run build && npx --yes wrangler@latest deploy --dry-run",
+    "deploy:cloudflare": "npm test && npm run build && npx --yes wrangler@latest deploy",
     "start": "node scripts/dev.mjs",
     "test": "node scripts/check.mjs"
   }

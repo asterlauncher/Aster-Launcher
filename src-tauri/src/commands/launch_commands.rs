@@ -1153,7 +1153,7 @@ fn java_major(javaw: &Path) -> Option<u32> {
     }
 }
 
-fn find_java(required_major: u32) -> Result<PathBuf, String> {
+pub(super) fn find_java(required_major: u32) -> Result<PathBuf, String> {
     let mut candidates = Vec::new();
     if let Some(path) = std::env::var_os("ASTER_JAVA_PATH").map(PathBuf::from) {
         candidates.push(path);
@@ -1226,7 +1226,7 @@ fn java_runtime_component(required_major: u32) -> Result<&'static str, String> {
     }
 }
 
-async fn ensure_java_runtime(
+pub(super) async fn ensure_java_runtime(
     app: &AppHandle,
     download_id: &str,
     client: &reqwest::Client,

@@ -62,13 +62,14 @@ pub async fn releases(
     provider: &str,
     project_id: &str,
     game_version: Option<&str>,
+    loader: Option<&str>,
     offset: usize,
     limit: usize,
 ) -> Result<ContentReleasePage, ContentErrorPayload> {
     let limit = limit.clamp(1, 20);
     match provider {
-        "modrinth" => modrinth_releases(project_id, game_version, offset, limit).await,
-        "curseforge" => curseforge_releases(project_id, game_version, offset, limit).await,
+        "modrinth" => modrinth_releases(project_id, game_version, loader, offset, limit).await,
+        "curseforge" => curseforge_releases(project_id, game_version, loader, offset, limit).await,
         _ => Err(ContentErrorPayload {
             code: "invalid_provider",
             message: "This content provider is not supported.".to_owned(),
@@ -122,6 +123,19 @@ fn release_matches(release: &ModrinthRelease, game_version: &str, loader: &str) 
             .loaders
             .iter()
             .any(|value| value.eq_ignore_ascii_case(&normalized_loader));
+    game_matches && loader_matches
+}
+
+fn curseforge_file_matches(file: &CurseForgeFile, game_version: &str, loader: &str) -> bool {
+    let game_matches =
+        game_version.is_empty() || file.game_versions.iter().any(|value| value == game_version);
+    let normalized_loader = loader.trim();
+    let loader_matches = normalized_loader.is_empty()
+        || normalized_loader.eq_ignore_ascii_case("vanilla")
+        || file
+            .game_versions
+            .iter()
+            .any(|value| value.eq_ignore_ascii_case(normalized_loader));
     game_matches && loader_matches
 }
 
@@ -298,15 +312,7 @@ async fn select_curseforge_dependency(
         .map_err(|_| invalid_response("CurseForge"))?
         .data
         .into_iter()
-        .find(|file| {
-            file.game_versions.iter().any(|value| value == game_version)
-                && (loader.is_empty()
-                    || loader.eq_ignore_ascii_case("vanilla")
-                    || file
-                        .game_versions
-                        .iter()
-                        .any(|value| value.eq_ignore_ascii_case(loader)))
-        })
+        .find(|file| curseforge_file_matches(file, game_version, loader))
         .ok_or_else(incompatible_dependency)
 }
 
@@ -355,8 +361,13 @@ async fn resolve_curseforge_install(
     })?;
     let client = client()?;
     let root = fetch_curseforge_file(&client, &api_key, project_id, release_id).await?;
-    if root.mod_id != project_id {
-        return Err(invalid_dependency());
+    if root.mod_id != project_id || !curseforge_file_matches(&root, game_version, loader) {
+        return Err(ContentErrorPayload {
+            code: "incompatible_release",
+            message: format!(
+                "The selected CurseForge file is not compatible with Minecraft {game_version} and {loader}. Choose a matching build."
+            ),
+        });
     }
     let mut queue = VecDeque::from([(root, false)]);
     let mut visited = HashSet::new();
@@ -525,9 +536,9 @@ async fn search_curseforge(
 
     if let Some(version) = game_version.filter(|value| !value.is_empty()) {
         request = request.query(&[("gameVersion", version)]);
-        if let Some(loader) = loader.and_then(curseforge_loader) {
-            request = request.query(&[("modLoaderType", loader)]);
-        }
+    }
+    if let Some(loader) = loader.and_then(curseforge_loader) {
+        request = request.query(&[("modLoaderType", loader)]);
     }
 
     let response = request.send().await.map_err(network_error)?;
@@ -584,6 +595,7 @@ async fn search_curseforge(
 async fn modrinth_releases(
     project_id: &str,
     game_version: Option<&str>,
+    loader: Option<&str>,
     offset: usize,
     limit: usize,
 ) -> Result<ContentReleasePage, ContentErrorPayload> {
@@ -591,6 +603,13 @@ async fn modrinth_releases(
     if let Some(version) = game_version.filter(|value| !value.is_empty()) {
         let versions = serde_json::to_string(&[version]).map_err(|_| internal_error())?;
         request = request.query(&[("game_versions", versions)]);
+    }
+    if let Some(loader) =
+        loader.filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("vanilla"))
+    {
+        let loaders =
+            serde_json::to_string(&[loader.to_ascii_lowercase()]).map_err(|_| internal_error())?;
+        request = request.query(&[("loaders", loaders)]);
     }
 
     let response = request.send().await.map_err(network_error)?;
@@ -633,6 +652,7 @@ async fn modrinth_releases(
 async fn curseforge_releases(
     project_id: &str,
     game_version: Option<&str>,
+    loader: Option<&str>,
     offset: usize,
     limit: usize,
 ) -> Result<ContentReleasePage, ContentErrorPayload> {
@@ -649,6 +669,9 @@ async fn curseforge_releases(
         ]);
     if let Some(version) = game_version.filter(|value| !value.is_empty()) {
         request = request.query(&[("gameVersion", version)]);
+    }
+    if let Some(loader_type) = loader.and_then(curseforge_loader) {
+        request = request.query(&[("modLoaderType", loader_type)]);
     }
 
     let response = request.send().await.map_err(network_error)?;
@@ -978,4 +1001,55 @@ struct CurseForgeFileResponse {
 #[derive(Debug, Deserialize)]
 struct CurseForgeDownloadUrl {
     data: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{curseforge_file_matches, release_matches, CurseForgeFile, ModrinthRelease};
+
+    fn modrinth_release(loaders: &[&str], versions: &[&str]) -> ModrinthRelease {
+        ModrinthRelease {
+            id: "release".to_owned(),
+            project_id: "project".to_owned(),
+            name: "Release".to_owned(),
+            version_number: "1.0.0".to_owned(),
+            game_versions: versions.iter().map(|value| (*value).to_owned()).collect(),
+            loaders: loaders.iter().map(|value| (*value).to_owned()).collect(),
+            dependencies: Vec::new(),
+            files: Vec::new(),
+        }
+    }
+
+    fn curseforge_file(loaders: &[&str], versions: &[&str]) -> CurseForgeFile {
+        CurseForgeFile {
+            id: 1,
+            mod_id: 2,
+            display_name: "Release".to_owned(),
+            file_name: "release.jar".to_owned(),
+            game_versions: versions
+                .iter()
+                .chain(loaders.iter())
+                .map(|value| (*value).to_owned())
+                .collect(),
+            dependencies: Vec::new(),
+            download_url: None,
+            file_length: 1,
+        }
+    }
+
+    #[test]
+    fn modrinth_release_requires_exact_game_and_loader() {
+        let release = modrinth_release(&["fabric"], &["1.20.1"]);
+        assert!(release_matches(&release, "1.20.1", "Fabric"));
+        assert!(!release_matches(&release, "1.20.1", "Forge"));
+        assert!(!release_matches(&release, "1.21.1", "Fabric"));
+    }
+
+    #[test]
+    fn curseforge_release_requires_exact_game_and_loader() {
+        let release = curseforge_file(&["Forge"], &["1.20.1"]);
+        assert!(curseforge_file_matches(&release, "1.20.1", "forge"));
+        assert!(!curseforge_file_matches(&release, "1.20.1", "Fabric"));
+        assert!(!curseforge_file_matches(&release, "1.21.1", "Forge"));
+    }
 }

@@ -28,7 +28,7 @@ const comingSoonCopy: Record<StoreTab, { title: string; detail: string }> = {
 };
 
 export function StorePage() {
-  const { openModal } = useAppStore();
+  const { creditBalance, openModal } = useAppStore();
   const [activeTab, setActiveTab] = useState<StoreTab>("All");
   const copy = comingSoonCopy[activeTab];
 
@@ -63,12 +63,12 @@ export function StorePage() {
           type="button"
           className="cosmetics-credit-balance"
           onClick={() => openModal("aster-subscription")}
-          aria-label="Aster Credits balance: 0 AC"
+          aria-label={`Aster Credits balance: ${creditBalance.toLocaleString()} AC`}
           title="View Aster Subscription"
         >
           <AsterCreditIcon size={21} />
           <span>
-            <strong>0 AC</strong>
+            <strong>{creditBalance.toLocaleString()} AC</strong>
             <small>ASTER CREDITS</small>
           </span>
         </button>

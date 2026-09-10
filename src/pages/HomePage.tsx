@@ -181,14 +181,15 @@ export function HomePage() {
 
   return (
     <div className="launcher-home">
-      <section className="home-feature-row">
-        <div className="featured-game">
-          <img
-            src="/assets/featured-modpack.png"
-            alt=""
-            className="featured-background"
-          />
-          <div className="featured-shade" />
+      <section className="home-feature-row minecraft-home-feature-row">
+        <img
+          src="/assets/featured-modpack.png"
+          alt=""
+          className="featured-background minecraft-home-feature-background"
+        />
+        <div className="featured-shade minecraft-home-feature-shade" />
+
+        <div className="featured-game minecraft-featured-game">
           <div className="featured-content">
             <h1>Minecraft 1.21.1</h1>
             <span className="featured-badge">Custom Modpack</span>

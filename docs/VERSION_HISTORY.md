@@ -1,5 +1,122 @@
 # Aster Launcher version history
 
+## 0.7.9 — Unified Minecraft Hero
+
+- Extended the Minecraft background across the entire feature row.
+- Added the same artwork behind the account card and removed the black split.
+- Kept account controls readable with a translucent blurred panel.
+
+## 0.7.8 — Clean Sidebar Logo
+
+- Removed the small game-status square below the Aster logo.
+- Applied the change to the shared sidebar so every tab stays consistent.
+
+## 0.7.7 — Compact Game Library
+
+- Reduced the game library window and card dimensions.
+- Removed the All games, Modpacks and Mods filter buttons.
+- Removed the footer status strip and redundant Aster Library eyebrow.
+- Preserved search, scrolling and active-game states.
+
+## 0.7.6 — Scalable Game Library
+
+- Replaced the fixed game list with a responsive card grid.
+- Added game search and Mods/Modpacks filters.
+- Added active-game, readiness, count and empty-result states.
+- Preserved the hidden Sprocket and Battlefront II workspaces.
+
+## 0.7.5 — BTD6 Safety Dialog Refresh
+
+- Reworked the modded-launch warning to match Aster's compact purple interface.
+- Kept the risk explanation, repeat confirmation and pre-launch security scan intact.
+
+## 0.7.4 — Upcoming Games Hidden
+
+- Temporarily hides Sprocket and Battlefront II from the game selector.
+- Keeps both implementations intact so they can be enabled again when ready.
+
+## 0.7.3 — Creator Mod Updates
+
+- Mod creators now see an Update button beside Install on their own approved BTD6 mods.
+- Replacement DLLs are rescanned and returned to pending moderation before publication.
+- Existing icons are retained unless the creator deliberately chooses a replacement.
+
+## 0.7.2 — Owner Name Update
+
+- Changed the protected owner identity from `synoi_` to `synoi` across the launcher and Supabase setup.
+
+## 0.7.1 — Existing Email Recovery
+
+- Registration now restores an already-created Aster account when the same password is entered.
+- Pending accounts receive a fresh confirmation email and a useful status message.
+- Wrong-password duplicate registrations automatically switch back to the Sign in view.
+
+## 0.7.0 — Separate Aster Accounts
+
+- Added native Aster email/password authentication and separated it from Minecraft Microsoft authentication.
+- Migrates the existing anonymous Social identity in place so community data remains intact.
+- Aster-wide social, Credits, BTD6 catalog and sharing features now use the Aster account shown in the top bar.
+
+## 0.6.8 — BTD6 Browser Cleanup
+
+- Removed the Community information and Managing cards from the right sidebar.
+- Made the BTD6 Status panel properly collapsible.
+- Added All mods and Your mods filtering to the catalog filter button.
+
+## 0.6.7 — BTD6 Catalog Polish
+
+- Added a compact gray creator name above BTD6 community mod titles.
+- Uses the catalog mod name in white and keeps the physical DLL name gray in packs.
+- Removed the Aster Game Support kicker from the BTD6 home artwork.
+
+## 0.6.6 — BTD6 Approval Settings
+
+- Removed BTD6 mod approval from the Minecraft settings.
+- Added the same owner-only approval and deletion queue to BTD6 settings.
+- Kept launcher settings available alongside BTD6 moderation.
+
+## 0.6.5 — BTD6 Add File Fix
+
+- Enforced the green BTD6 Install and Installed button styling.
+- Fixed the refresh race that removed a newly imported local DLL from its pack.
+- Refreshes the physical DLL inventory before committing pack membership.
+
+## 0.6.4 — Pack-Specific Install Status
+
+- Replaced Manage with a green Install action in the BTD6 community catalog.
+- Shows Installed only when the exact mod version belongs to the selected pack.
+- Recalculates the button independently whenever the target modpack changes.
+
+## 0.6.3 — BTD6 Modpack Management
+
+- Added a Minecraft-style BTD6 modpack creation dialog with custom icons.
+- Changed community installation into per-modpack management.
+- Limited each pack manager to the DLLs actually contained in that pack.
+- Removed redundant community metadata and pack membership controls.
+- Added safer disabled-first DLL downloads and duplicate-file cleanup.
+
+## 0.6.2 — Social Session Recovery
+
+- Added automatic recovery for Minecraft profiles left on an inactive anonymous
+  Social identity.
+- Preserved Social, gift, Shared World, owner, and BTD6 community data during
+  identity migration.
+- Kept active-session collision protection and UUID-based ownership checks.
+
+## 0.5.5 — Aster Host
+
+- Added local dedicated world hosting for Vanilla and Fabric instances.
+- Added mod synchronization, LAN connection details, modpack sharing, and free tunnel guidance.
+- Added reliable startup detection, stop controls, and host crash reporting.
+
+## 0.5.4 — Reliable In-Launcher Updates
+
+- Fixed Windows updates silently running the NSIS installer outside update mode.
+- Relaunches the installed launcher only after the update installer finishes.
+- Persists installer failures across restart so the launcher can show the real
+  error instead of appearing to do nothing.
+- Retains the secure Social session and player-search fixes from 0.5.3.
+
 ## 0.5.3 — Secure Social Session Hotfix
 
 - Added Windows DPAPI backup storage for Social refresh sessions.

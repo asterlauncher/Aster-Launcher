@@ -26,6 +26,7 @@ import {
 } from "../auth/authState";
 import { initialDownloads, instances as mockInstances } from "../data/mock";
 import type {
+  AsterAccount,
   AuthErrorPayload,
   AuthProgress,
   PublicAccount,
@@ -36,10 +37,23 @@ import type {
   LauncherNotification,
   ModalKind,
   NewLauncherNotification,
+  GameId,
   PageId,
   Toast,
 } from "../types/launcher";
 import { getLauncherSettings } from "../services/settings";
+import {
+  claimCosmeticsReleaseGift,
+  emptyAsterWallet,
+  hasClaimedCosmeticsReleaseGift,
+  loadAsterWallet,
+} from "../services/asterWallet";
+import {
+  registerAsterAccount as registerAsterAccountService,
+  restoreAsterAccount,
+  signInAsterAccount as signInAsterAccountService,
+  signOutAsterAccount as signOutAsterAccountService,
+} from "../services/social";
 
 const NOTIFICATION_STORAGE_KEY = "aster-launcher.notifications.v1";
 
@@ -70,6 +84,8 @@ function loadNotifications(): LauncherNotification[] {
 }
 
 interface AppStoreValue {
+  activeGame: GameId;
+  setActiveGame: (game: GameId) => void;
   page: PageId;
   setPage: (page: PageId) => void;
   sidebarCollapsed: boolean;
@@ -78,6 +94,13 @@ interface AppStoreValue {
   setOffline: (value: boolean) => void;
   account: PublicAccount | null;
   loggedIn: boolean;
+  asterAccount: AsterAccount | null;
+  asterLoggedIn: boolean;
+  asterAuthBusy: boolean;
+  asterAuthError: string | null;
+  signInAster: (email: string, password: string) => Promise<boolean>;
+  registerAster: (username: string, email: string, password: string) => Promise<boolean>;
+  signOutAster: () => Promise<void>;
   authStatus: AuthUiStatus;
   authError: AuthErrorPayload | null;
   authProgress: string | null;
@@ -101,6 +124,10 @@ interface AppStoreValue {
   markAllNotificationsRead: () => void;
   dismissNotification: (id: string) => void;
   clearNotifications: () => void;
+  creditBalance: number;
+  setGiftCreditBalance: (balance: number) => void;
+  releaseGiftAvailable: boolean;
+  claimReleaseGift: () => boolean;
   instances: GameInstance[];
   updateInstance: (id: string, patch: Partial<GameInstance>) => void;
   downloads: DownloadItem[];
@@ -110,10 +137,21 @@ interface AppStoreValue {
 const AppStore = createContext<AppStoreValue | null>(null);
 
 export function AppStoreProvider({ children }: { children: ReactNode }) {
+  const [activeGame, setActiveGameState] = useState<GameId>(() => {
+    const saved = window.localStorage.getItem("aster-launcher.active-game");
+    return saved === "sprocket" ||
+      saved === "btd6" ||
+      saved === "battlefront2"
+      ? saved
+      : "minecraft";
+  });
   const [page, setPage] = useState<PageId>("home");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [offline, setOffline] = useState(false);
   const [auth, dispatchAuth] = useReducer(authReducer, initialAuthState);
+  const [asterAccount, setAsterAccount] = useState<AsterAccount | null>(null);
+  const [asterAuthBusy, setAsterAuthBusy] = useState(true);
+  const [asterAuthError, setAsterAuthError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [emptyLibrary, setEmptyLibrary] = useState(false);
   const [modal, setModal] = useState<ModalKind>(null);
@@ -124,11 +162,16 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     useState<GameInstance[]>(mockInstances);
   const [downloads, setDownloads] =
     useState<DownloadItem[]>(initialDownloads);
+  const [asterWallet, setAsterWallet] = useState(emptyAsterWallet);
+  const [giftCreditBalance, setGiftCreditBalanceState] = useState(0);
   const previousDownloadStatuses = useRef(
     new Map<string, DownloadItem["status"]>(),
   );
+  const profileSyncInFlight = useRef(false);
+  const lastProfileSyncAt = useRef(0);
 
   useEffect(() => {
+    if (!isTauriRuntime()) return;
     let stopListening: (() => void) | undefined;
     void listen<{
       id: string;
@@ -377,6 +420,171 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   }, [notify]);
 
   useEffect(() => {
+    let disposed = false;
+    const restore = () => {
+      setAsterAuthBusy(true);
+      void restoreAsterAccount()
+        .then((restored) => {
+          if (!disposed) setAsterAccount(restored);
+        })
+        .catch((error) => {
+          if (!disposed) {
+            setAsterAuthError(error instanceof Error ? error.message : String(error));
+          }
+        })
+        .finally(() => {
+          if (!disposed) setAsterAuthBusy(false);
+        });
+    };
+    restore();
+    window.addEventListener("focus", restore);
+    return () => {
+      disposed = true;
+      window.removeEventListener("focus", restore);
+    };
+  }, []);
+
+  const signInAster = useCallback(async (email: string, password: string) => {
+    setAsterAuthBusy(true);
+    setAsterAuthError(null);
+    try {
+      const nextAccount = await signInAsterAccountService(email, password);
+      setAsterAccount(nextAccount);
+      setModal(null);
+      notify({
+        title: "Welcome back",
+        message: `${nextAccount.username} is signed in to Aster.`,
+        tone: "success",
+      });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setAsterAuthError(message);
+      notify({ title: "Aster sign-in failed", message, tone: "error" });
+      return false;
+    } finally {
+      setAsterAuthBusy(false);
+    }
+  }, [notify]);
+
+  const registerAster = useCallback(async (
+    username: string,
+    email: string,
+    password: string,
+  ) => {
+    setAsterAuthBusy(true);
+    setAsterAuthError(null);
+    try {
+      const nextAccount = await registerAsterAccountService({ username, email, password });
+      setAsterAccount(nextAccount.pendingVerification ? null : nextAccount);
+      setModal(null);
+      notify({
+        title: nextAccount.pendingVerification ? "Verify your email" : "Aster account created",
+        message: nextAccount.pendingVerification
+          ? `We sent a confirmation link to ${nextAccount.email}. Your existing Social data remains attached to this account.`
+          : `Welcome, ${nextAccount.username}. Your existing Social data was preserved.`,
+        tone: "success",
+      });
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setAsterAuthError(message);
+      notify({ title: "Registration failed", message, tone: "error" });
+      return false;
+    } finally {
+      setAsterAuthBusy(false);
+    }
+  }, [notify]);
+
+  const signOutAster = useCallback(async () => {
+    setAsterAuthBusy(true);
+    setAsterAuthError(null);
+    try {
+      await signOutAsterAccountService();
+      setAsterAccount(null);
+      setGiftCreditBalanceState(0);
+      setModal(null);
+      notify({ title: "Signed out", message: "Your Aster session was removed from this device.", tone: "info" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setAsterAuthError(message);
+      notify({ title: "Sign out failed", message, tone: "error" });
+    } finally {
+      setAsterAuthBusy(false);
+    }
+  }, [notify]);
+
+  useEffect(() => {
+    if (
+      asterAccount
+    ) {
+      setAsterWallet(loadAsterWallet(asterAccount.id));
+    } else {
+      setAsterWallet({ ...emptyAsterWallet });
+    }
+  }, [asterAccount]);
+
+  useEffect(() => {
+    if (
+      !isTauriRuntime() ||
+      auth.status !== "authenticated" ||
+      auth.account?.sessionState !== "active"
+    ) {
+      return;
+    }
+
+    let disposed = false;
+    const syncProfile = async (force = false) => {
+      const now = Date.now();
+      if (
+        profileSyncInFlight.current ||
+        (!force && now - lastProfileSyncAt.current < 60_000)
+      ) {
+        return;
+      }
+
+      profileSyncInFlight.current = true;
+      lastProfileSyncAt.current = now;
+      try {
+        const account = await getActiveAccount();
+        if (!disposed && account) {
+          dispatchAuth({ type: "authenticated", account });
+        }
+      } catch (error) {
+        if (disposed) return;
+        const normalized = normalizeAuthError(error);
+        if (
+          normalized.code === "session_expired" ||
+          normalized.code === "token_refresh_failed"
+        ) {
+          dispatchAuth({ type: "expired", error: normalized });
+        }
+      } finally {
+        profileSyncInFlight.current = false;
+      }
+    };
+
+    const handleFocus = () => {
+      if (document.visibilityState === "visible") {
+        void syncProfile();
+      }
+    };
+    const interval = window.setInterval(
+      () => void syncProfile(true),
+      5 * 60_000,
+    );
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
+    };
+  }, [auth.account?.id, auth.account?.sessionState, auth.status]);
+
+  useEffect(() => {
     if (!isTauriRuntime()) {
       dispatchAuth({ type: "signedOut" });
       return;
@@ -442,9 +650,40 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
   const loggedIn =
     auth.status === "authenticated" &&
     auth.account?.sessionState === "active";
+  const asterLoggedIn = Boolean(asterAccount);
+  const releaseGiftAvailable =
+    asterLoggedIn && !hasClaimedCosmeticsReleaseGift(asterWallet);
+
+  useEffect(() => {
+    setGiftCreditBalanceState(0);
+  }, [asterAccount?.id]);
+
+  const setGiftCreditBalance = useCallback((balance: number) => {
+    const normalized =
+      Number.isFinite(balance) && balance >= 0 ? Math.floor(balance) : 0;
+    setGiftCreditBalanceState(normalized);
+  }, []);
+
+  const claimReleaseGift = useCallback(() => {
+    if (
+      !asterAccount
+    ) {
+      return false;
+    }
+
+    const result = claimCosmeticsReleaseGift(asterAccount.id);
+    setAsterWallet(result.wallet);
+    return result.claimed;
+  }, [asterAccount]);
 
   const value = useMemo<AppStoreValue>(
     () => ({
+      activeGame,
+      setActiveGame: (game) => {
+        setActiveGameState(game);
+        window.localStorage.setItem("aster-launcher.active-game", game);
+        setPage("home");
+      },
       page,
       setPage,
       sidebarCollapsed,
@@ -453,6 +692,13 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       setOffline,
       account: auth.account,
       loggedIn,
+      asterAccount,
+      asterLoggedIn,
+      asterAuthBusy,
+      asterAuthError,
+      signInAster,
+      registerAster,
+      signOutAster,
       authStatus: auth.status,
       authError: auth.error,
       authProgress: auth.progress,
@@ -476,17 +722,26 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       markAllNotificationsRead,
       dismissNotification,
       clearNotifications,
+      creditBalance: asterWallet.balance + giftCreditBalance,
+      setGiftCreditBalance,
+      releaseGiftAvailable,
+      claimReleaseGift,
       instances: launcherInstances,
       updateInstance,
       downloads,
       setDownloads,
     }),
     [
+      activeGame,
       page,
       sidebarCollapsed,
       offline,
       auth,
       loggedIn,
+      asterAccount,
+      asterLoggedIn,
+      asterAuthBusy,
+      asterAuthError,
       loading,
       emptyLibrary,
       modal,
@@ -499,12 +754,20 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
       markAllNotificationsRead,
       dismissNotification,
       clearNotifications,
+      asterWallet.balance,
+      giftCreditBalance,
+      setGiftCreditBalance,
+      releaseGiftAvailable,
+      claimReleaseGift,
       launcherInstances,
       updateInstance,
       downloads,
       beginMicrosoftLogin,
       refreshActiveAccount,
       signOut,
+      signInAster,
+      registerAster,
+      signOutAster,
     ],
   );
 

@@ -31,7 +31,7 @@ function saveSeen(key: string, values: Set<string>) {
 
 export function SocialNotificationBridge() {
   const settings = useLauncherSettings();
-  const { account, loggedIn, pushNotification } = useAppStore();
+  const { asterAccount: account, asterLoggedIn: loggedIn, pushNotification } = useAppStore();
   const initializedMessages = useRef(false);
 
   useEffect(() => {

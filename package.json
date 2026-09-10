@@ -1,7 +1,7 @@
 {
   "name": "aster-launcher",
   "private": true,
-  "version": "0.5.3",
+  "version": "0.7.9",
   "type": "module",
   "scripts": {
     "dev": "vite --configLoader runner",
@@ -20,7 +20,8 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "simple-icons": "^16.21.0",
-    "skinview3d": "^3.4.2"
+    "skinview3d": "^3.4.2",
+    "three": "^0.156.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.11",

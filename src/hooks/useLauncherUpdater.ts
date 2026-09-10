@@ -30,12 +30,17 @@ interface NativeLauncherUpdate {
   signature: string;
 }
 
+interface NativeLauncherUpdateInstallResult {
+  success: boolean;
+  message: string;
+}
+
 type NativeDownloadEvent =
   | { event: "Started"; data: { contentLength?: number } }
   | { event: "Progress"; data: { chunkLength: number } }
   | { event: "Finished" };
 
-const FALLBACK_VERSION = "0.5.3";
+const FALLBACK_VERSION = "0.5.4";
 const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 const MANUAL_DOWNLOAD_URL =
   "https://github.com/asterlauncher/Aster-Launcher/releases";
@@ -269,6 +274,26 @@ export function useLauncherUpdater() {
   useEffect(() => {
     statusRef.current = status;
   }, [status]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+
+    void invoke<NativeLauncherUpdateInstallResult | null>(
+      "take_launcher_update_result",
+    )
+      .then((result) => {
+        if (!result) return;
+        if (result.success) {
+          setError(null);
+          setStatus("up-to-date");
+          return;
+        }
+
+        setError(result.message);
+        setStatus("error");
+      })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!settings.automaticUpdateChecks) {

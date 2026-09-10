@@ -13,6 +13,28 @@ use tokio::io::AsyncWriteExt;
 use std::os::windows::process::CommandExt;
 
 const MAX_CONTENT_BYTES: u64 = 512 * 1024 * 1024;
+const ASTER_1201_INSTANCE_ID: &str = "aster-1-20-1";
+const ASTER_1201_GAME_VERSION: &str = "1.20.1";
+const ASTER_1201_LOADER: &str = "Fabric";
+const ASTER_CLIENT_PROJECT_ID: &str = "aster-client";
+const ASTER_CLIENT_FILE_NAME: &str = "aster-client-1.20.1.jar";
+const ASTER_CLIENT_RESOURCE_PATH: &str = "resources/aster/aster-client-1.20.1.jar";
+const ASTER_1201_SYSTEM_PROJECTS: [(&str, &str); 6] = [
+    ("P7dR8mSH", "Fabric API"),
+    ("gvQqBUqZ", "Lithium"),
+    ("uXXizFIs", "FerriteCore"),
+    ("5ZwdcRci", "ImmediatelyFast"),
+    ("YL57xq9U", "Iris Shaders"),
+    ("AANobbMI", "Sodium"),
+];
+const ASTER_1201_OPTIONAL_PROJECTS: [(&str, &str); 6] = [
+    ("1bokaNcj", "Xaero's Minimap"),
+    ("NcUtCpym", "Xaero's World Map"),
+    ("w7ThoJFB", "Zoomify"),
+    ("8shC1gFX", "BetterF3"),
+    ("EsAfCjCV", "AppleSkin"),
+    ("yBW8D80W", "LambDynamicLights"),
+];
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -98,6 +120,32 @@ pub(crate) struct InstalledContentMetadata {
     pub(crate) project_id: String,
     pub(crate) release_id: String,
     pub(crate) icon_url: Option<String>,
+    #[serde(default)]
+    pub(crate) hidden: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AsterProvisionResult {
+    installed_files: usize,
+    system_files: usize,
+    already_ready: bool,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AsterClientSettings {
+    coordinates: bool,
+    fps_counter: bool,
+    clock: bool,
+    sprint_status: bool,
+    direction: bool,
+    minimap: bool,
+    world_map: bool,
+    zoom: bool,
+    better_f3: bool,
+    apple_skin: bool,
+    dynamic_lights: bool,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -189,6 +237,269 @@ fn validate_file_name(file_name: &str) -> Result<(), String> {
         return Err("The content file name is invalid.".to_owned());
     }
     Ok(())
+}
+
+fn is_aster_1201(instance_id: &str) -> bool {
+    instance_id == ASTER_1201_INSTANCE_ID
+}
+
+fn aster_client_config_path(directory: &Path) -> PathBuf {
+    directory.join("config").join("aster-client.properties")
+}
+
+fn parse_aster_client_settings(contents: &str) -> AsterClientSettings {
+    let mut settings = AsterClientSettings::default();
+    for line in contents.lines() {
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let enabled = value.trim().eq_ignore_ascii_case("true");
+        match key.trim() {
+            "coordinates" => settings.coordinates = enabled,
+            "fps_counter" => settings.fps_counter = enabled,
+            "clock" => settings.clock = enabled,
+            "sprint_status" => settings.sprint_status = enabled,
+            "direction" => settings.direction = enabled,
+            "minimap" => settings.minimap = enabled,
+            "world_map" => settings.world_map = enabled,
+            "zoom" => settings.zoom = enabled,
+            "better_f3" => settings.better_f3 = enabled,
+            "apple_skin" => settings.apple_skin = enabled,
+            "dynamic_lights" => settings.dynamic_lights = enabled,
+            _ => {}
+        }
+    }
+    settings
+}
+
+fn serialize_aster_client_settings(settings: &AsterClientSettings) -> String {
+    format!(
+        concat!(
+            "# Aster Client 1.20.1 - managed by Aster Launcher\n",
+            "schema=2\n",
+            "coordinates={}\n",
+            "fps_counter={}\n",
+            "clock={}\n",
+            "sprint_status={}\n",
+            "direction={}\n",
+            "minimap={}\n",
+            "world_map={}\n",
+            "zoom={}\n",
+            "better_f3={}\n",
+            "apple_skin={}\n",
+            "dynamic_lights={}\n"
+        ),
+        settings.coordinates,
+        settings.fps_counter,
+        settings.clock,
+        settings.sprint_status,
+        settings.direction,
+        settings.minimap,
+        settings.world_map,
+        settings.zoom,
+        settings.better_f3,
+        settings.apple_skin,
+        settings.dynamic_lights
+    )
+}
+
+fn is_aster_system_project(project_id: &str) -> bool {
+    project_id.eq_ignore_ascii_case(ASTER_CLIENT_PROJECT_ID)
+        || ASTER_1201_SYSTEM_PROJECTS
+            .iter()
+            .any(|(candidate, _)| candidate.eq_ignore_ascii_case(project_id))
+        || ASTER_1201_OPTIONAL_PROJECTS
+            .iter()
+            .any(|(candidate, _)| candidate.eq_ignore_ascii_case(project_id))
+}
+
+fn is_aster_conflicting_mod(name: &str, project_id: &str) -> bool {
+    if is_aster_system_project(project_id) {
+        return true;
+    }
+    let normalized = name.to_ascii_lowercase().replace(['-', '_', '.'], " ");
+    [
+        "sodium",
+        "lithium",
+        "ferritecore",
+        "ferrite core",
+        "immediatelyfast",
+        "immediately fast",
+        "iris shader",
+        "optifine",
+        "optifabric",
+        "oculus",
+        "embeddium",
+        "rubidium",
+        "canvas renderer",
+        "vulkanmod",
+        "vulkan mod",
+        "nvidium",
+        "entity culling",
+        "modernfix",
+        "modern fix",
+        "starlight",
+        "phosphor",
+        "c2me",
+    ]
+    .iter()
+    .any(|fragment| normalized.contains(fragment))
+}
+
+fn protected_content_message() -> String {
+    "Aster 1.20.1 already manages this client feature. Duplicate renderer, shader, performance or built-in Aster module files cannot be installed."
+        .to_owned()
+}
+
+fn metadata_item_is_hidden(directory: &Path, section: &str, file_name: &str) -> bool {
+    let active_name = file_name.trim_end_matches(".disabled");
+    read_content_metadata(directory).items.iter().any(|item| {
+        item.hidden
+            && item.section == section
+            && item.file_name.trim_end_matches(".disabled") == active_name
+    })
+}
+
+fn mark_content_hidden(directory: &Path, section: &str, file_name: &str) -> Result<(), String> {
+    let active_name = file_name.trim_end_matches(".disabled");
+    let mut document = read_content_metadata(directory);
+    let mut found = false;
+    for item in &mut document.items {
+        if item.section == section && item.file_name.trim_end_matches(".disabled") == active_name {
+            item.hidden = true;
+            found = true;
+        }
+    }
+    if !found {
+        return Err("The Aster system component metadata is missing.".to_owned());
+    }
+    save_content_metadata(directory, &document)
+}
+
+fn sync_aster_optional_project_states(
+    directory: &Path,
+    _settings: &AsterClientSettings,
+) -> Result<(), String> {
+    let mut document = read_content_metadata(directory);
+    let mut changed = false;
+
+    for item in &mut document.items {
+        if !item.hidden
+            || item.section != "mods"
+            || !ASTER_1201_OPTIONAL_PROJECTS
+                .iter()
+                .any(|(project_id, _)| item.project_id.eq_ignore_ascii_case(project_id))
+        {
+            continue;
+        }
+
+        // Keep managed modules loaded so Aster can switch them at runtime.
+        // Their visible behaviour is controlled by the live adapter registry.
+        let should_enable = true;
+        let is_enabled = !item.file_name.ends_with(".disabled");
+        if should_enable == is_enabled {
+            continue;
+        }
+
+        let target_name = if should_enable {
+            item.file_name.trim_end_matches(".disabled").to_owned()
+        } else {
+            format!("{}.disabled", item.file_name)
+        };
+        let source = directory.join("mods").join(&item.file_name);
+        let target = directory.join("mods").join(&target_name);
+        if !source.is_file() || target.exists() {
+            continue;
+        }
+        if std::fs::rename(source, target).is_ok() {
+            item.file_name = target_name;
+            changed = true;
+        }
+    }
+
+    if changed {
+        save_content_metadata(directory, &document)?;
+    }
+    Ok(())
+}
+
+fn bundled_aster_client_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let bundled = app
+        .path()
+        .resolve(
+            ASTER_CLIENT_RESOURCE_PATH,
+            tauri::path::BaseDirectory::Resource,
+        )
+        .map_err(|_| "The bundled Aster Client path is unavailable.".to_owned())?;
+    if bundled.is_file() {
+        return Ok(bundled);
+    }
+
+    let development = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(ASTER_CLIENT_RESOURCE_PATH);
+    if development.is_file() {
+        return Ok(development);
+    }
+    Err("The bundled Aster Client component is missing.".to_owned())
+}
+
+fn provision_bundled_aster_client(app: &AppHandle, directory: &Path) -> Result<bool, String> {
+    let source = bundled_aster_client_path(app)?;
+    let bytes = std::fs::read(source)
+        .map_err(|_| "The bundled Aster Client component could not be read.".to_owned())?;
+    if bytes.len() < 4 || !bytes.starts_with(b"PK") {
+        return Err("The bundled Aster Client component is invalid.".to_owned());
+    }
+
+    let target = directory.join("mods").join(ASTER_CLIENT_FILE_NAME);
+    let already_current = std::fs::read(&target)
+        .map(|current| current == bytes)
+        .unwrap_or(false);
+    let mut installed = false;
+    if !already_current {
+        let temporary = directory
+            .join("mods")
+            .join(format!(".aster-client-{}.jar.part", std::process::id()));
+        let _ = std::fs::remove_file(&temporary);
+        std::fs::write(&temporary, &bytes)
+            .map_err(|_| "The Aster Client component could not be prepared.".to_owned())?;
+        for _ in 0..6 {
+            if target.is_file() && std::fs::remove_file(&target).is_err() {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                continue;
+            }
+            if std::fs::rename(&temporary, &target).is_ok() {
+                installed = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+
+        if !installed {
+            let usable_existing = std::fs::read(&target)
+                .map(|current| current.starts_with(b"PK"))
+                .unwrap_or(false);
+            let _ = std::fs::remove_file(&temporary);
+            if !usable_existing {
+                return Err("The Aster Client component could not be installed.".to_owned());
+            }
+        }
+    }
+
+    write_content_metadata_items(
+        directory,
+        vec![InstalledContentMetadata {
+            section: "mods".to_owned(),
+            file_name: ASTER_CLIENT_FILE_NAME.to_owned(),
+            name: "Aster Client".to_owned(),
+            version: "1.3.0".to_owned(),
+            source: "Aster".to_owned(),
+            project_id: ASTER_CLIENT_PROJECT_ID.to_owned(),
+            release_id: "aster-1.20.1-live-settings-v2".to_owned(),
+            icon_url: None,
+            hidden: true,
+        }],
+    )?;
+    Ok(installed)
 }
 
 fn section_folder(section: &str) -> Result<&'static str, String> {
@@ -340,6 +651,9 @@ fn scan_section(
         let saved = content_metadata.iter().find(|item| {
             item.section == section && item.file_name.trim_end_matches(".disabled") == active_name
         });
+        if saved.is_some_and(|item| item.hidden) {
+            continue;
+        }
         items.push(InstanceContentFile {
             id: format!("{section}:{file_name}"),
             kind: section.to_owned(),
@@ -376,6 +690,49 @@ fn scan_section(
 pub fn create_instance_structure(app: AppHandle, instance_id: String) -> Result<(), String> {
     let directory = instance_directory(&app, &instance_id)?;
     ensure_structure_at(&directory)
+}
+
+#[tauri::command]
+pub fn get_aster_client_settings(
+    app: AppHandle,
+    instance_id: String,
+) -> Result<AsterClientSettings, String> {
+    if !is_aster_1201(&instance_id) {
+        return Err("Aster Client settings are only available for Aster profiles.".to_owned());
+    }
+    let directory = instance_directory(&app, &instance_id)?;
+    ensure_structure_at(&directory)?;
+    let path = aster_client_config_path(&directory);
+    match std::fs::read_to_string(path) {
+        Ok(contents) => Ok(parse_aster_client_settings(&contents)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(AsterClientSettings::default())
+        }
+        Err(_) => Err("The Aster Client settings could not be read.".to_owned()),
+    }
+}
+
+#[tauri::command]
+pub fn set_aster_client_settings(
+    app: AppHandle,
+    instance_id: String,
+    settings: AsterClientSettings,
+) -> Result<(), String> {
+    if !is_aster_1201(&instance_id) {
+        return Err("Aster Client settings are only available for Aster profiles.".to_owned());
+    }
+    let directory = instance_directory(&app, &instance_id)?;
+    ensure_structure_at(&directory)?;
+    std::fs::write(
+        aster_client_config_path(&directory),
+        serialize_aster_client_settings(&settings),
+    )
+    .map_err(|_| "The Aster Client settings could not be saved.".to_owned())?;
+    // Loaded third-party mod JARs can be locked by a running game. Persist the
+    // requested state now and apply every possible rename immediately; the
+    // provision step repeats the synchronization before the next launch.
+    let _ = sync_aster_optional_project_states(&directory, &settings);
+    Ok(())
 }
 
 #[tauri::command]
@@ -540,6 +897,9 @@ pub fn import_instance_content(
     if !allowed_extension(&section, file_name) {
         return Err("The selected file type does not match this content section.".to_owned());
     }
+    if is_aster_1201(&instance_id) && section == "mods" && is_aster_conflicting_mod(file_name, "") {
+        return Err(protected_content_message());
+    }
 
     let directory = instance_directory(&app, &instance_id)?;
     ensure_structure_at(&directory)?;
@@ -562,6 +922,9 @@ pub fn set_instance_content_enabled(
 ) -> Result<(), String> {
     validate_file_name(&file_name)?;
     let directory = instance_directory(&app, &instance_id)?;
+    if is_aster_1201(&instance_id) && metadata_item_is_hidden(&directory, &section, &file_name) {
+        return Err("Aster system components are managed by the launcher.".to_owned());
+    }
     let folder = directory.join(section_folder(&section)?);
     let source = folder.join(&file_name);
     if !source.is_file() {
@@ -593,6 +956,9 @@ pub fn remove_instance_content(
 ) -> Result<(), String> {
     validate_file_name(&file_name)?;
     let directory = instance_directory(&app, &instance_id)?;
+    if is_aster_1201(&instance_id) && metadata_item_is_hidden(&directory, &section, &file_name) {
+        return Err("Aster system components are managed by the launcher.".to_owned());
+    }
     let target = directory.join(section_folder(&section)?).join(&file_name);
     let removal = if target.is_dir() {
         std::fs::remove_dir_all(target)
@@ -644,6 +1010,20 @@ pub async fn download_instance_content(
     ensure_structure_at(&directory)?;
     let folder = directory.join(section_folder(&section)?);
     let target = folder.join(&file_name);
+    let system_install = is_aster_1201(&instance_id)
+        && section == "mods"
+        && download_id.starts_with("aster-system-");
+    if is_aster_1201(&instance_id)
+        && section == "mods"
+        && !system_install
+        && is_aster_conflicting_mod(&name, &project_id)
+    {
+        if target.exists() && metadata_item_is_hidden(&directory, &section, &file_name) {
+            emit_download_progress(&app, &download_id, 100, "Provided by Aster", None, None);
+            return Ok(());
+        }
+        return Err(protected_content_message());
+    }
     if target.exists() {
         let result = write_content_metadata_items(
             &directory,
@@ -656,6 +1036,7 @@ pub async fn download_instance_content(
                 project_id,
                 release_id,
                 icon_url,
+                hidden: system_install,
             }],
         );
         if result.is_ok() {
@@ -741,6 +1122,7 @@ pub async fn download_instance_content(
             project_id,
             release_id,
             icon_url,
+            hidden: system_install,
         }],
     );
     if result.is_ok() {
@@ -754,6 +1136,143 @@ pub async fn download_instance_content(
         );
     }
     result
+}
+
+#[tauri::command]
+pub async fn provision_aster_profile(
+    app: AppHandle,
+    instance_id: String,
+    download_id: String,
+) -> Result<AsterProvisionResult, String> {
+    if !is_aster_1201(&instance_id) {
+        return Err("This is not a managed Aster profile.".to_owned());
+    }
+
+    let directory = instance_directory(&app, &instance_id)?;
+    ensure_structure_at(&directory)?;
+    let mut installed_files = 0_usize;
+    emit_download_progress(&app, &download_id, 1, "Preparing Aster Client", None, None);
+    if provision_bundled_aster_client(&app, &directory)? {
+        installed_files += 1;
+    }
+
+    let managed_projects = ASTER_1201_SYSTEM_PROJECTS
+        .iter()
+        .chain(ASTER_1201_OPTIONAL_PROJECTS.iter())
+        .collect::<Vec<_>>();
+    for (project_index, (project_id, display_name)) in managed_projects.iter().enumerate() {
+        let current_metadata = read_content_metadata(&directory);
+        let existing = current_metadata.items.iter().find(|item| {
+            item.hidden
+                && item.section == "mods"
+                && item.project_id.eq_ignore_ascii_case(project_id)
+                && directory.join("mods").join(&item.file_name).is_file()
+        });
+        if existing.is_some() {
+            continue;
+        }
+
+        emit_download_progress(
+            &app,
+            &download_id,
+            ((project_index * 90) / managed_projects.len()).max(1) as u8,
+            format!("Preparing {display_name}"),
+            None,
+            None,
+        );
+        let releases = crate::content::releases(
+            "modrinth",
+            project_id,
+            Some(ASTER_1201_GAME_VERSION),
+            Some("fabric"),
+            0,
+            20,
+        )
+        .await
+        .map_err(|error| error.message)?;
+        let release = releases
+            .releases
+            .into_iter()
+            .find(|release| {
+                release.loaders.is_empty()
+                    || release
+                        .loaders
+                        .iter()
+                        .any(|loader| loader.eq_ignore_ascii_case(ASTER_1201_LOADER))
+            })
+            .ok_or_else(|| format!("{display_name} has no compatible Aster 1.20.1 release."))?;
+        let plan = crate::content::resolve_install_plan(
+            "modrinth",
+            project_id,
+            &release.id,
+            ASTER_1201_GAME_VERSION,
+            ASTER_1201_LOADER,
+        )
+        .await
+        .map_err(|error| error.message)?;
+
+        for file in plan.files {
+            let dependency_already_managed =
+                read_content_metadata(&directory).items.iter().any(|item| {
+                    item.hidden
+                        && item.section == "mods"
+                        && item.project_id.eq_ignore_ascii_case(&file.project_id)
+                        && directory.join("mods").join(&item.file_name).is_file()
+                });
+            if dependency_already_managed {
+                continue;
+            }
+            let target = directory.join("mods").join(&file.file_name);
+            let was_installed = target.is_file();
+            download_instance_content(
+                app.clone(),
+                instance_id.clone(),
+                "mods".to_owned(),
+                file.download_url,
+                file.file_name.clone(),
+                if file.project_id.eq_ignore_ascii_case(project_id) {
+                    (*display_name).to_owned()
+                } else {
+                    file.name
+                },
+                file.version_number,
+                "Modrinth".to_owned(),
+                file.project_id,
+                file.release_id,
+                file.icon_url,
+                format!("aster-system-{download_id}"),
+            )
+            .await?;
+            mark_content_hidden(&directory, "mods", &file.file_name)?;
+            if !was_installed {
+                installed_files += 1;
+            }
+        }
+    }
+
+    let settings = std::fs::read_to_string(aster_client_config_path(&directory))
+        .map(|contents| parse_aster_client_settings(&contents))
+        .unwrap_or_default();
+    sync_aster_optional_project_states(&directory, &settings)?;
+
+    let system_files = read_content_metadata(&directory)
+        .items
+        .iter()
+        .filter(|item| item.hidden && item.section == "mods")
+        .count();
+    emit_download_progress(
+        &app,
+        &download_id,
+        100,
+        "Aster performance profile ready",
+        None,
+        None,
+    );
+    Ok(AsterProvisionResult {
+        installed_files,
+        system_files,
+        already_ready: installed_files == 0,
+    })
 }
 
 #[tauri::command]
@@ -793,7 +1312,10 @@ pub fn set_instance_icon(
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_structure_at, scan_section, write_content_metadata_items, InstalledContentMetadata,
+        ensure_structure_at, is_aster_conflicting_mod, is_aster_system_project,
+        parse_aster_client_settings, scan_section, serialize_aster_client_settings,
+        sync_aster_optional_project_states, write_content_metadata_items, AsterClientSettings,
+        InstalledContentMetadata,
     };
     use uuid::Uuid;
 
@@ -811,6 +1333,7 @@ mod tests {
             project_id: "example-project".to_owned(),
             release_id: "example-release".to_owned(),
             icon_url: Some("https://cdn.modrinth.com/example.png".to_owned()),
+            hidden: false,
         };
         write_content_metadata_items(&directory, vec![metadata.clone()]).expect("write metadata");
         let files = scan_section(&directory, "mods", &[metadata]).expect("scan mods");
@@ -822,6 +1345,98 @@ mod tests {
             files[0].icon_url.as_deref(),
             Some("https://cdn.modrinth.com/example.png")
         );
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn hidden_aster_system_content_is_not_listed() {
+        let directory = std::env::temp_dir().join(format!("aster-hidden-test-{}", Uuid::new_v4()));
+        ensure_structure_at(&directory).expect("create instance");
+        std::fs::write(directory.join("mods/sodium.jar"), b"test").expect("write mod");
+        let metadata = InstalledContentMetadata {
+            section: "mods".to_owned(),
+            file_name: "sodium.jar".to_owned(),
+            name: "Sodium".to_owned(),
+            version: "test".to_owned(),
+            source: "Modrinth".to_owned(),
+            project_id: "AANobbMI".to_owned(),
+            release_id: "release".to_owned(),
+            icon_url: None,
+            hidden: true,
+        };
+        let files = scan_section(&directory, "mods", &[metadata]).expect("scan mods");
+        assert!(files.is_empty());
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    #[test]
+    fn aster_conflict_detection_blocks_render_stacks() {
+        assert!(is_aster_system_project("aster-client"));
+        assert!(is_aster_conflicting_mod("OptiFine HD U", ""));
+        assert!(is_aster_conflicting_mod("Anything", "YL57xq9U"));
+        assert!(!is_aster_conflicting_mod("JourneyMap", "journeymap"));
+    }
+
+    #[test]
+    fn aster_client_settings_round_trip_launcher_properties() {
+        let expected = AsterClientSettings {
+            coordinates: true,
+            fps_counter: false,
+            clock: true,
+            sprint_status: true,
+            direction: false,
+            minimap: true,
+            world_map: false,
+            zoom: true,
+            better_f3: false,
+            apple_skin: true,
+            dynamic_lights: false,
+        };
+        let encoded = serialize_aster_client_settings(&expected);
+        let decoded = parse_aster_client_settings(&encoded);
+        assert!(decoded.coordinates);
+        assert!(!decoded.fps_counter);
+        assert!(decoded.clock);
+        assert!(decoded.sprint_status);
+        assert!(!decoded.direction);
+        assert!(decoded.minimap);
+        assert!(!decoded.world_map);
+        assert!(decoded.zoom);
+        assert!(!decoded.better_f3);
+        assert!(decoded.apple_skin);
+        assert!(!decoded.dynamic_lights);
+        assert!(encoded.contains("schema=2"));
+    }
+
+    #[test]
+    fn optional_aster_mods_stay_loaded_for_live_settings() {
+        let directory = std::env::temp_dir().join(format!("aster-modules-test-{}", Uuid::new_v4()));
+        ensure_structure_at(&directory).expect("create instance");
+        std::fs::write(directory.join("mods/xaero.jar"), b"test").expect("write mod");
+        write_content_metadata_items(
+            &directory,
+            vec![InstalledContentMetadata {
+                section: "mods".to_owned(),
+                file_name: "xaero.jar".to_owned(),
+                name: "Xaero's Minimap".to_owned(),
+                version: "test".to_owned(),
+                source: "Modrinth".to_owned(),
+                project_id: "1bokaNcj".to_owned(),
+                release_id: "release".to_owned(),
+                icon_url: None,
+                hidden: true,
+            }],
+        )
+        .expect("write metadata");
+
+        let mut settings = AsterClientSettings::default();
+        sync_aster_optional_project_states(&directory, &settings).expect("keep minimap loaded");
+        assert!(directory.join("mods/xaero.jar").is_file());
+        assert!(!directory.join("mods/xaero.jar.disabled").is_file());
+
+        settings.minimap = true;
+        sync_aster_optional_project_states(&directory, &settings).expect("keep minimap active");
+        assert!(directory.join("mods/xaero.jar").is_file());
         let _ = std::fs::remove_dir_all(directory);
     }
 }

@@ -5,6 +5,8 @@ export type PageId =
   | "store"
   | "settings";
 
+export type GameId = "minecraft" | "sprocket" | "btd6" | "battlefront2";
+
 export type InstanceStatus =
   | "ready"
   | "installing"
@@ -62,6 +64,8 @@ export interface DownloadItem {
 }
 
 export type ModalKind =
+  | "aster-auth"
+  | "aster-account"
   | "add-account"
   | "manage-account"
   | "friends"

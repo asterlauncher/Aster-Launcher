@@ -41,6 +41,7 @@ import {
   subscribeModpackLibrary,
   type InstalledModpack,
 } from "../services/modpackLibrary";
+import { getAsterInstallConflict } from "../services/asterProfiles";
 import { listMinecraftVersions } from "../services/launcher";
 import { useAppStore } from "../store/AppStore";
 
@@ -108,6 +109,7 @@ interface DiscoveryTarget {
   gameVersion: string;
   loader: string;
   contentType: ContentType;
+  systemProfile?: InstalledModpack["systemProfile"];
 }
 
 function loadDiscoveryTarget(): DiscoveryTarget | null {
@@ -436,6 +438,19 @@ export function ModsPage() {
   const install = async (item: ContentProject) => {
     const key = `${item.provider}:${item.id}`;
     let release = releases.find((entry) => entry.id === selectedReleases[key]);
+    const asterConflict = getAsterInstallConflict(
+      installTarget?.systemProfile,
+      activeTab,
+      item,
+    );
+    if (asterConflict) {
+      notify({
+        title: "Protected Aster component",
+        message: asterConflict,
+        tone: "warning",
+      });
+      return;
+    }
 
     if (activeTab === "Modpacks") {
       const downloadId = `modpack-${Date.now()}-${Math.random()
@@ -460,6 +475,7 @@ export function ModsPage() {
             item.provider,
             item.id,
             showAllVersions ? "" : version,
+            loader,
             0,
             1,
           );
@@ -559,6 +575,7 @@ export function ModsPage() {
             item.provider,
             item.id,
             installTarget.gameVersion,
+            installTarget.loader,
             0,
             20,
           );
@@ -708,6 +725,7 @@ export function ModsPage() {
       item.provider,
       item.id,
       showAllVersions ? "" : version,
+      installTarget?.loader ?? loader,
       0,
       2,
     )
@@ -741,6 +759,7 @@ export function ModsPage() {
       item.provider,
       item.id,
       showAllVersions ? "" : version,
+      installTarget?.loader ?? loader,
       releases.length,
       2,
     )
@@ -837,6 +856,7 @@ export function ModsPage() {
                   gameVersion: item.version,
                   loader: item.loader,
                   contentType: activeTab,
+                  systemProfile: item.systemProfile,
                 };
                 localStorage.setItem(
                   DISCOVERY_TARGET_KEY,

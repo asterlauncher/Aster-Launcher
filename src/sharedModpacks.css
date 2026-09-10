@@ -1,0 +1,193 @@
+.shared-modpacks-section {
+  padding: 0 !important;
+  overflow: hidden;
+}
+
+.shared-modpacks {
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  min-height: 560px;
+  height: 100%;
+  background: #0d0b10;
+}
+
+.shared-modpack-list {
+  min-width: 0;
+  border-right: 2px solid #070608;
+  background: #151219;
+  padding: 14px;
+}
+
+.shared-modpack-list > header,
+.shared-modpack-hero {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.shared-modpack-list > header {
+  justify-content: space-between;
+  padding: 2px 2px 13px;
+  border-bottom: 1px solid #322b38;
+  margin-bottom: 10px;
+}
+
+.shared-modpack-list h3,
+.shared-modpack-hero h2 {
+  margin: 0;
+  color: #fff;
+}
+
+.shared-modpack-list h3 { font-size: 13px; }
+.shared-modpack-list p,
+.shared-modpack-hero p { margin: 4px 0 0; color: #8e8397; font-size: 8px; }
+
+.shared-modpack-list > header button,
+.shared-modpack-error button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 2px solid #080709;
+  background: linear-gradient(#403b44, #29262d);
+  color: #fff;
+  box-shadow: inset 0 2px #5c5661, inset 0 -3px #171519;
+}
+
+.shared-modpack-list > button {
+  display: grid;
+  grid-template-columns: 37px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 58px;
+  margin: 7px 0;
+  padding: 8px;
+  border: 2px solid #080709;
+  background: linear-gradient(#353139, #252229);
+  color: #fff;
+  text-align: left;
+  box-shadow: inset 0 2px #514b56, inset 0 -3px #151317;
+}
+
+.shared-modpack-list > button.is-selected {
+  border-color: #4a2869;
+  background: linear-gradient(#70418f, #4b2865);
+  box-shadow: inset 0 2px #a26ac3, inset 0 -3px #2a1639;
+}
+
+.shared-modpack-list > button > span:first-child,
+.shared-modpack-hero > span {
+  display: grid;
+  place-items: center;
+  width: 37px;
+  height: 37px;
+  background: #39234a;
+  color: #d996ff;
+  border: 1px solid #76489a;
+}
+
+.shared-modpack-list strong,
+.shared-modpack-list small { display: block; }
+.shared-modpack-list strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.shared-modpack-list small { margin-top: 5px; color: #aaa0b2; font-size: 7px; }
+.shared-modpack-list b { padding: 4px 5px; background: #9d50d1; color: #fff; font-size: 6px; }
+
+.shared-modpack-detail {
+  min-width: 0;
+  padding: 20px;
+  overflow: auto;
+}
+
+.shared-modpack-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 13px;
+  padding: 9px 11px;
+  border: 1px solid #883c4a;
+  background: #391a22;
+  color: #ff9eae;
+  font-size: 8px;
+}
+
+.shared-modpack-hero {
+  padding: 4px 0 17px;
+  border-bottom: 1px solid #322b38;
+}
+
+.shared-modpack-hero > div { flex: 1; min-width: 0; }
+.shared-modpack-hero small { color: #c27bea; font-size: 7px; }
+.shared-modpack-hero h2 { margin-top: 5px; font-size: 18px; }
+.shared-modpack-hero em { display: flex; align-items: center; gap: 5px; color: #72dc8b; font-size: 7px; font-style: normal; }
+
+.shared-modpack-invite,
+.shared-modpack-action-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 15px;
+  border: 1px solid #46344f;
+  background: #19151e;
+}
+
+.shared-modpack-invite > div,
+.shared-modpack-action-card > div { flex: 1; min-width: 0; }
+.shared-modpack-invite strong,
+.shared-modpack-invite span,
+.shared-modpack-action-card strong,
+.shared-modpack-action-card span { display: block; }
+.shared-modpack-invite strong,
+.shared-modpack-action-card strong { color: #fff; font-size: 10px; }
+.shared-modpack-invite span,
+.shared-modpack-action-card span { margin-top: 6px; color: #9b909f; font-size: 7px; line-height: 1.5; }
+
+.shared-modpack-invite button,
+.shared-modpack-action-card button,
+.modpack-shared-update {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 2px solid #180c21;
+  background: linear-gradient(#814bac, #512d70);
+  color: #fff;
+  box-shadow: inset 0 2px #ad72d0, inset 0 -3px #321a47, 0 2px #050405;
+  font-size: 8px;
+}
+
+.shared-modpack-invite button:last-child { background: linear-gradient(#4b464f, #2e2b31); box-shadow: inset 0 2px #68616d, inset 0 -3px #1a181c; }
+.shared-modpack-action-card.owner { border-color: #3b3151; }
+
+.shared-modpack-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 150px;
+  color: #817687;
+  text-align: center;
+}
+.shared-modpack-empty.large { min-height: 430px; }
+.shared-modpack-empty strong { color: #c8becd; font-size: 9px; }
+.shared-modpack-empty span { font-size: 7px; }
+
+.modpack-entry.has-shared-update { border-color: #69378c; }
+.modpack-shared-update {
+  position: absolute;
+  right: 51px;
+  bottom: 10px;
+  z-index: 2;
+  min-height: 25px;
+  padding-inline: 9px;
+  font-size: 7px;
+}
+
+@media (max-width: 850px) {
+  .shared-modpacks { grid-template-columns: 220px minmax(0, 1fr); }
+}

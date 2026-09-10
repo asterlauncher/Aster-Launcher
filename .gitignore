@@ -13,6 +13,8 @@ website/website/.wrangler
 .env
 .env.local
 backups/
+artifacts/
+aster-client/build/
 rustup-init.exe
 vs_buildtools.exe
 backups/updater/*.key

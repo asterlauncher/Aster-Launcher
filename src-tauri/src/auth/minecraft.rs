@@ -172,10 +172,7 @@ pub async fn cache_skin(
     profile_id: &str,
     skin_directory: &Path,
 ) -> Result<PathBuf, AuthError> {
-    let parsed = Url::parse(skin_url).map_err(|_| AuthError::SkinDownloadFailed)?;
-    if parsed.scheme() != "https" || parsed.host_str() != Some("textures.minecraft.net") {
-        return Err(AuthError::SkinDownloadFailed);
-    }
+    let parsed = normalize_skin_url(skin_url)?;
 
     let response = client
         .get(parsed)
@@ -240,6 +237,27 @@ pub async fn cache_skin(
     Ok(destination)
 }
 
+fn normalize_skin_url(skin_url: &str) -> Result<Url, AuthError> {
+    let mut parsed = Url::parse(skin_url).map_err(|_| AuthError::SkinDownloadFailed)?;
+    if parsed.host_str() != Some("textures.minecraft.net")
+        || !matches!(parsed.scheme(), "http" | "https")
+        || parsed.username() != ""
+        || parsed.password().is_some()
+        || parsed.port().is_some()
+    {
+        return Err(AuthError::SkinDownloadFailed);
+    }
+
+    // Mojang profile responses can still contain the legacy HTTP texture URL.
+    // Never send it over plaintext: upgrade the trusted texture host to HTTPS.
+    if parsed.scheme() == "http" {
+        parsed
+            .set_scheme("https")
+            .map_err(|_| AuthError::SkinDownloadFailed)?;
+    }
+    Ok(parsed)
+}
+
 fn validate_skin_png(bytes: &[u8]) -> Result<(), AuthError> {
     const PNG_SIGNATURE: &[u8; 8] = b"\x89PNG\r\n\x1a\n";
     if bytes.len() < 24 || bytes.len() > MAX_SKIN_BYTES || &bytes[..8] != PNG_SIGNATURE {
@@ -265,6 +283,23 @@ fn map_network_error(error: reqwest::Error) -> AuthError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_mojang_skin_urls_are_upgraded_to_https() {
+        let parsed = normalize_skin_url("http://textures.minecraft.net/texture/0123456789abcdef")
+            .expect("trusted Mojang skin URL should be accepted");
+
+        assert_eq!(parsed.scheme(), "https");
+        assert_eq!(parsed.host_str(), Some("textures.minecraft.net"));
+    }
+
+    #[test]
+    fn foreign_skin_hosts_are_rejected() {
+        assert!(matches!(
+            normalize_skin_url("https://example.com/skin.png"),
+            Err(AuthError::SkinDownloadFailed)
+        ));
+    }
 
     #[test]
     fn invalid_skin_payload_is_rejected() {

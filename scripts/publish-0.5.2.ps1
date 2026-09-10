@@ -13,35 +13,33 @@ $tag = "app-v$version"
 $workspace = Split-Path -Parent $PSScriptRoot
 $publishPaths = @(
     ".github/workflows/release.yml",
-    "docs/RELEASE_NOTES.md",
-    "docs/SOCIAL_SETUP.md",
-    "docs/VERSION_HISTORY.md",
-    "docs/releases/0.5.2.md",
-    "docs/releases/$version.md",
+    ".gitignore",
+    "README.md",
+    "aster-client/README.md",
+    "aster-client/build.ps1",
+    "aster-client/src",
+    "aster-client/tools",
+    "docs",
     "package-lock.json",
     "package.json",
-    "scripts/create-update-manifest.mjs",
-    "scripts/publish-0.5.1.ps1",
-    "scripts/publish-0.5.2.ps1",
-    "scripts/publish-$version.ps1",
-    "scripts/publish-website.ps1",
-    "scripts/repair-0.5.1-update.ps1",
+    "public/assets",
+    "scripts",
+    "src",
     "src-tauri/Cargo.lock",
     "src-tauri/Cargo.toml",
-    "src-tauri/src/auth/token_store.rs",
-    "src-tauri/src/commands/social_commands.rs",
-    "src-tauri/src/lib.rs",
+    "src-tauri/build.rs",
+    "src-tauri/capabilities",
+    "src-tauri/gen/schemas/capabilities.json",
+    "src-tauri/resources",
+    "src-tauri/src",
     "src-tauri/tauri.conf.json",
-    "src/components/FriendsHub.tsx",
-    "src/hooks/useLauncherUpdater.ts",
-    "src/index.css",
-    "src/services/presence.ts",
-    "src/services/social.test.ts",
-    "src/services/social.ts",
-    "supabase/social.sql",
+    "src-tauri/windows",
+    "supabase",
+    "website/website/README.md",
     "website/website/package.json",
-    "website/website/scripts/check.mjs",
-    "website/website/worker/index.js"
+    "website/website/scripts",
+    "website/website/worker",
+    "website/website/wrangler.jsonc"
 )
 
 function Resolve-Tool {
@@ -250,7 +248,14 @@ if ($LASTEXITCODE -ne 0 -or -not $staged) {
     throw "No $version changes are staged."
 }
 
-$unexpected = $staged | Where-Object { $publishPaths -notcontains $_ }
+$unexpected = $staged | Where-Object {
+    $stagedPath = $_
+    -not ($publishPaths | Where-Object {
+        $allowedPath = $_.TrimEnd("/")
+        $stagedPath -eq $allowedPath -or
+            $stagedPath.StartsWith("$allowedPath/")
+    })
+}
 if ($unexpected) {
     Invoke-Checked -Program $git -Arguments @("reset")
     throw "Unexpected files reached staging: $($unexpected -join ', ')"
@@ -275,7 +280,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Invoke-Checked -Program $git -Arguments @(
-    "commit", "-m", "Publish Aster Launcher $version secure social session hotfix"
+    "commit", "-m", "Publish Aster Launcher $version"
 )
 $commitSha = (& $git rev-parse HEAD).Trim()
 
