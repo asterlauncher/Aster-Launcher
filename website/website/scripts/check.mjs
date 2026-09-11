@@ -10,8 +10,8 @@ globalThis.fetch = async () => {
 
 try {
   for (const [path, content] of [
-    ["/", "ONE PLACE."],
-    ["/privacy", "Datenschutzhinweise"],
+    ["/", "All your mods."],
+    ["/privacy", "How the Aster website"],
     ["/legal", "asterlauncher@gmail.com"],
   ]) {
     const response = await site.fetch(new Request(`https://aster.test${path}`));
@@ -23,15 +23,19 @@ try {
   }
 
   const home = await (await site.fetch(new Request("https://aster.test/"))).text();
-  assert.ok(home.includes("NO PUBLIC BUILD AVAILABLE"));
+  assert.ok(home.includes("In development"));
+  assert.ok(home.includes("/aster-core-loop.mp4"));
+  assert.ok(home.includes("more than one game"));
   assert.ok(!home.includes("DOWNLOAD 0.7.9"));
+  assert.ok(!home.includes("Minecraft.otf"));
+  assert.ok(!home.includes("launcher-preview.png"));
   assert.ok(!home.includes('href="/download"'));
   assert.ok(!home.includes('href="/changelog"'));
 
   for (const path of ["/download", "/changelog"]) {
     const response = await site.fetch(new Request(`https://aster.test${path}`));
     assert.equal(response.status, 410, path);
-    assert.match(await response.text(), /No public Aster Launcher version/);
+    assert.match(await response.text(), /Nothing to download yet/);
     assert.match(response.headers.get("cache-control"), /no-store/);
   }
 
@@ -41,4 +45,4 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log("Rebranding website routes and retired launcher downloads passed.");
+console.log("Redesigned website routes and retired launcher downloads passed.");

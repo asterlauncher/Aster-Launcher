@@ -1,12 +1,36 @@
 import { createServer } from "node:http";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import site from "../worker/index.js";
 
 const port = Number.parseInt(process.env.PORT ?? "4173", 10);
-const fontPath = resolve(import.meta.dirname, "..", "assets", "Minecraft.otf");
 const iconPath = resolve(import.meta.dirname, "..", "assets", "aster-icon.png");
-const previewPath = resolve(import.meta.dirname, "..", "assets", "launcher-preview.png");
+const videoPath = resolve(import.meta.dirname, "..", "assets", "aster-core-loop.mp4");
+
+async function sendFile(incoming, outgoing, path, contentType) {
+  const file = await readFile(path);
+  const range = incoming.headers.range;
+  outgoing.setHeader("content-type", contentType);
+  outgoing.setHeader("accept-ranges", "bytes");
+
+  if (range) {
+    const size = (await stat(path)).size;
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (match) {
+      const start = match[1] ? Number.parseInt(match[1], 10) : 0;
+      const end = match[2] ? Math.min(Number.parseInt(match[2], 10), size - 1) : size - 1;
+      outgoing.statusCode = 206;
+      outgoing.setHeader("content-range", `bytes ${start}-${end}/${size}`);
+      outgoing.setHeader("content-length", end - start + 1);
+      outgoing.end(file.subarray(start, end + 1));
+      return;
+    }
+  }
+
+  outgoing.statusCode = 200;
+  outgoing.setHeader("content-length", file.length);
+  outgoing.end(file);
+}
 
 const server = createServer(async (incoming, outgoing) => {
   try {
@@ -18,23 +42,12 @@ const server = createServer(async (incoming, outgoing) => {
       method: incoming.method,
       headers: incoming.headers,
     });
-    if (requestUrl.pathname === "/minecraft.otf") {
-      outgoing.statusCode = 200;
-      outgoing.setHeader("content-type", "font/otf");
-      outgoing.setHeader("cache-control", "public, max-age=31536000, immutable");
-      outgoing.end(await readFile(fontPath));
-      return;
-    }
     if (requestUrl.pathname === "/aster-icon.png") {
-      outgoing.statusCode = 200;
-      outgoing.setHeader("content-type", "image/png");
-      outgoing.end(await readFile(iconPath));
+      await sendFile(incoming, outgoing, iconPath, "image/png");
       return;
     }
-    if (requestUrl.pathname === "/launcher-preview.png") {
-      outgoing.statusCode = 200;
-      outgoing.setHeader("content-type", "image/png");
-      outgoing.end(await readFile(previewPath));
+    if (requestUrl.pathname === "/aster-core-loop.mp4") {
+      await sendFile(incoming, outgoing, videoPath, "video/mp4");
       return;
     }
     const response = await site.fetch(request);

@@ -12,7 +12,9 @@ npm test
 npm run build
 ```
 
-The server prints its local URL. Edit `worker/index.js`; `scripts/build.mjs` bundles the existing font and images into `dist/server/index.js`. The old starter files under `app/` are not the active website entrypoint.
+The server prints its local URL. Edit `worker/index.js`; `scripts/build.mjs` copies the Worker and static assets into `dist`. The old starter files under `app/` are not the active website entrypoint.
+
+The homepage is a single-screen, monochrome introduction to Aster as a launcher for multiple games and their mods. `assets/aster-core-loop.mp4` is the user-owned motion reference used for its animated background and central visual.
 
 ## Public versions
 

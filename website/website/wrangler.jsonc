@@ -3,7 +3,10 @@
   "name": "aster-launcher",
   "account_id": "2d5d6418b071fdd8868a55d893c59226",
   "main": "dist/server/index.js",
-  "compatibility_date": "2026-09-10",
+  "compatibility_date": "2026-09-11",
+  "assets": {
+    "directory": "./dist/public/"
+  },
   "workers_dev": true,
   "preview_urls": false,
   "routes": [
