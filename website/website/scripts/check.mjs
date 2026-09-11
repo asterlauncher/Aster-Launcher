@@ -10,7 +10,7 @@ globalThis.fetch = async () => {
 
 try {
   for (const [path, content] of [
-    ["/", "All your mods."],
+    ["/", "Your mods."],
     ["/privacy", "How the Aster website"],
     ["/legal", "asterlauncher@gmail.com"],
   ]) {
@@ -26,15 +26,17 @@ try {
   assert.ok(home.includes("In development"));
   assert.ok(home.includes("ambient-pixels"));
   assert.ok(home.includes("Scroll to explore"));
-  assert.ok(home.includes("Everything<br>together."));
-  assert.ok(home.includes("Built around<br>the way you play."));
+  assert.ok(home.includes("Pick a game.<br>Add your mods."));
+  assert.ok(home.includes("Still in<br>the works."));
+  assert.ok(!home.includes("Built around"));
+  assert.ok(!home.includes("taking shape"));
   assert.ok(home.includes("scrollbar-width:none"));
   const siteScript = await (await site.fetch(new Request("https://aster.test/site.js"))).text();
   assert.ok(siteScript.includes("scrollVelocity"));
   assert.ok(siteScript.includes("densityProgress"));
   assert.ok(siteScript.includes('addEventListener("pointermove"'));
   assert.ok(home.includes("/aster-core-loop.mp4"));
-  assert.ok(home.includes("more than one game"));
+  assert.ok(home.includes("Manage your games, mods and profiles"));
   assert.ok(!home.includes("DOWNLOAD 0.7.9"));
   assert.ok(!home.includes("Minecraft.otf"));
   assert.ok(!home.includes("launcher-preview.png"));

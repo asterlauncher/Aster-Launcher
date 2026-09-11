@@ -225,16 +225,6 @@ h1{margin:0;max-width:340px;font-size:clamp(28px,7.7vw,38px);font-weight:480;let
 .feature-index{display:block;margin-bottom:62px;color:#6f6f6f;font-size:10px;letter-spacing:.14em}
 .feature h3{margin:0 0 11px;font-size:18px;font-weight:520}
 .feature p{margin:0;color:#888;font-size:13px;line-height:1.6}
-.workflow-card{display:grid;grid-template-columns:1fr 1fr}
-.workflow-copy{padding:48px;border-right:1px solid var(--line)}
-.workflow-copy h2{margin:0;font-size:clamp(34px,5vw,56px);font-weight:480;letter-spacing:-.04em;line-height:1.02}
-.workflow-copy p{margin:24px 0 0;color:var(--muted);font-size:14px;line-height:1.65}
-.workflow-list{display:grid}
-.workflow-item{display:grid;grid-template-columns:40px 1fr;gap:18px;padding:30px;border-bottom:1px solid var(--line)}
-.workflow-item:last-child{border-bottom:0}
-.workflow-item>span{color:#747474;font-size:10px;letter-spacing:.12em}
-.workflow-item h3{margin:0 0 7px;font-size:16px;font-weight:520}
-.workflow-item p{margin:0;color:#858585;font-size:13px;line-height:1.55}
 .closing-section{min-height:88svh}
 .closing-card{width:min(425px,calc(100vw - 32px));padding:38px 28px 29px;border:1px solid var(--line);background:rgba(4,4,4,.95);text-align:left}
 .closing-card p:not(.brand-label){margin:20px 0 30px;color:var(--muted);font-size:14px;line-height:1.6}
@@ -273,8 +263,6 @@ h1{margin:0;max-width:340px;font-size:clamp(28px,7.7vw,38px);font-weight:480;let
   .feature-list{grid-template-columns:1fr}
   .feature{min-height:auto;padding:25px 22px;border-right:0;border-bottom:1px solid var(--line)}
   .feature:last-child{border-bottom:0}.feature-index{margin-bottom:25px}
-  .workflow-card{grid-template-columns:1fr}.workflow-copy{padding:31px 22px;border-right:0;border-bottom:1px solid var(--line)}
-  .workflow-item{padding:25px 22px}
   .document-head,.document-content{padding-left:23px;padding-right:23px}
 }
 @media(prefers-reduced-motion:reduce){
@@ -320,8 +308,8 @@ function home() {
           </div>
           <div class="core-copy">
             <p class="brand-label">ASTER LAUNCHER</p>
-            <h1 id="hero-title">All your mods.<br>One launcher.</h1>
-            <p class="intro">Aster keeps your games, mods and profiles in one place. Simple to set up, easy to manage, and built for more than one game.</p>
+            <h1 id="hero-title">Your mods.<br>One launcher.</h1>
+            <p class="intro">Manage your games, mods and profiles in one place.</p>
             <div class="actions">
               <a class="action" href="/privacy"><span class="arrow" aria-hidden="true">‹</span> Privacy</a>
               <a class="action" href="${REPOSITORY_URL}" rel="noreferrer">GitHub</a>
@@ -335,25 +323,14 @@ function home() {
       <section class="content-section" id="library">
         <div class="section-card" data-reveal>
           <header class="section-head">
-            <p class="section-number">01 / LIBRARY</p>
-            <h2>Everything<br>together.</h2>
-            <p>Aster gives every supported game its own space. Your mods, profiles and settings stay where they belong, so switching setups stays simple.</p>
+            <p class="section-number">01 / HOW IT WORKS</p>
+            <h2>Pick a game.<br>Add your mods.</h2>
+            <p>Each profile keeps its own mods and settings, so one setup won't affect another.</p>
           </header>
           <div class="feature-list">
-            <article class="feature"><span class="feature-index">01 / GAMES</span><h3>One clear library.</h3><p>Find every supported game and setup from a single place.</p></article>
-            <article class="feature"><span class="feature-index">02 / MODS</span><h3>Mods without the mess.</h3><p>Install and manage content without sorting folders by hand.</p></article>
-            <article class="feature"><span class="feature-index">03 / PROFILES</span><h3>Every setup stays separate.</h3><p>Keep different mod collections and settings ready to launch.</p></article>
-          </div>
-        </div>
-      </section>
-
-      <section class="content-section">
-        <div class="section-card workflow-card" data-reveal>
-          <div class="workflow-copy"><p class="brand-label">02 / YOUR SETUP</p><h2>Built around<br>the way you play.</h2><p>Aster keeps the routine short. Choose a game, shape a profile and get back to playing.</p></div>
-          <div class="workflow-list">
-            <article class="workflow-item"><span>01</span><div><h3>Start clean.</h3><p>Create a fresh profile for any supported game.</p></div></article>
-            <article class="workflow-item"><span>02</span><div><h3>Change freely.</h3><p>Add, remove and organise mods as your setup grows.</p></div></article>
-            <article class="workflow-item"><span>03</span><div><h3>Stay in control.</h3><p>See what belongs to each profile before you launch.</p></div></article>
+            <article class="feature"><span class="feature-index">01 / GAME</span><h3>Pick a game.</h3><p>Choose one of the games Aster supports.</p></article>
+            <article class="feature"><span class="feature-index">02 / MODS</span><h3>Add mods.</h3><p>Install what you want and remove what you don't.</p></article>
+            <article class="feature"><span class="feature-index">03 / PLAY</span><h3>Press play.</h3><p>Your setup is saved for next time.</p></article>
           </div>
         </div>
       </section>
@@ -361,8 +338,8 @@ function home() {
       <section class="content-section closing-section">
         <div class="closing-card" data-reveal>
           <p class="brand-label">ASTER / IN DEVELOPMENT</p>
-          <h2>Aster is<br>taking shape.</h2>
-          <p>The redesigned launcher is in development. The first public build will arrive when it is ready.</p>
+          <h2>Still in<br>the works.</h2>
+          <p>We're working on the new launcher. There's no download yet.</p>
           <div class="closing-actions"><a class="action" href="#content">Back to top</a><a class="action action-primary" href="${REPOSITORY_URL}" rel="noreferrer">Follow on GitHub</a></div>
         </div>
       </section>
