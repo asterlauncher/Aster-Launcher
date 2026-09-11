@@ -27,6 +27,74 @@ const SITE_JS = `
 
   syncMotion();
   mediaQuery.addEventListener?.("change", syncMotion);
+
+  const canvas = document.querySelector(".ambient-pixels");
+  const context = canvas?.getContext("2d");
+  let pixelFrame = 0;
+
+  const resizePixels = () => {
+    if (!canvas || !context) return;
+    const density = Math.min(window.devicePixelRatio || 1, 1.5);
+    canvas.width = Math.round(window.innerWidth * density);
+    canvas.height = Math.round(window.innerHeight * density);
+    canvas.style.width = window.innerWidth + "px";
+    canvas.style.height = window.innerHeight + "px";
+    context.setTransform(density, 0, 0, density, 0, 0);
+  };
+
+  const drawPixels = (timestamp = 0) => {
+    if (!canvas || !context) return;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const spacing = width < 600 ? 13 : 11;
+    const time = timestamp * 0.00022;
+
+    context.clearRect(0, 0, width, height);
+    context.fillStyle = "#fff";
+
+    for (let y = spacing / 2; y < height; y += spacing) {
+      const normalizedY = y / height;
+      for (let x = spacing / 2; x < width; x += spacing) {
+        const normalizedX = x / width;
+        const leftRidge = 0.53 + Math.sin(normalizedX * 8 + time * 2.2) * 0.085;
+        const rightRidge = 0.58 + Math.cos(normalizedX * 7 - time * 1.8) * 0.095;
+        const left = Math.exp(-(
+          Math.pow((normalizedX + 0.04) / 0.43, 2) +
+          Math.pow((normalizedY - leftRidge) / 0.24, 2)
+        ) * 2.1);
+        const right = Math.exp(-(
+          Math.pow((normalizedX - 1.04) / 0.44, 2) +
+          Math.pow((normalizedY - rightRidge) / 0.27, 2)
+        ) * 2.05);
+        const lower = Math.exp(-(
+          Math.pow((normalizedX - 0.5) / 0.72, 2) +
+          Math.pow((normalizedY - 1.08) / 0.28, 2)
+        ) * 2.4) * 0.32;
+        const grain = 0.5 + 0.5 * Math.sin(x * 0.041 + y * 0.027 + time * 5) *
+          Math.cos(x * 0.019 - y * 0.033 - time * 3.4);
+        const field = Math.min(1, left + right + lower);
+        const alpha = field * (0.025 + grain * 0.19);
+
+        if (alpha < 0.025) continue;
+        const size = 0.65 + grain * 1.65;
+        context.globalAlpha = alpha;
+        context.fillRect(x - size / 2, y - size / 2, size, size);
+      }
+    }
+
+    context.globalAlpha = 1;
+    if (!mediaQuery.matches) pixelFrame = window.requestAnimationFrame(drawPixels);
+  };
+
+  const restartPixels = () => {
+    window.cancelAnimationFrame(pixelFrame);
+    resizePixels();
+    drawPixels(mediaQuery.matches ? 0 : performance.now());
+  };
+
+  restartPixels();
+  window.addEventListener("resize", restartPixels, { passive: true });
+  mediaQuery.addEventListener?.("change", restartPixels);
 })();
 `;
 
@@ -51,6 +119,7 @@ a{color:inherit}
   position:relative;isolation:isolate;min-height:100svh;display:grid;place-items:center;
   padding:40px 24px 72px;overflow:hidden;background:#030303
 }
+.ambient-pixels{position:absolute;z-index:-4;inset:0;width:100%;height:100%;opacity:.92;pointer-events:none}
 .ambient-shade{
   position:absolute;z-index:-3;inset:0;background:
     radial-gradient(circle at 50% 46%,rgba(255,255,255,.025),transparent 24rem),
@@ -140,6 +209,7 @@ function home() {
     description: "Aster keeps your games, mods and profiles together in one simple launcher.",
     path: "/",
     content: `<main class="landing" id="content">
+      <canvas class="ambient-pixels" aria-hidden="true"></canvas>
       <div class="ambient-shade" aria-hidden="true"></div>
       <div class="grid" aria-hidden="true"></div>
       <section class="core-card" aria-labelledby="hero-title">

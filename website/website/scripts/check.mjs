@@ -24,6 +24,7 @@ try {
 
   const home = await (await site.fetch(new Request("https://aster.test/"))).text();
   assert.ok(home.includes("In development"));
+  assert.ok(home.includes("ambient-pixels"));
   assert.ok(home.includes("/aster-core-loop.mp4"));
   assert.ok(home.includes("more than one game"));
   assert.ok(!home.includes("DOWNLOAD 0.7.9"));
