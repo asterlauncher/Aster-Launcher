@@ -58,10 +58,12 @@ const SITE_JS = `
     lastPixelPaint = timestamp;
     const width = window.innerWidth;
     const height = window.innerHeight;
-    const spacing = width < 600 ? 13 : 12;
     const time = timestamp * 0.00025;
     const scrollRange = Math.max(1, document.documentElement.scrollHeight - height);
     const progress = window.scrollY / scrollRange;
+    const densityProgress = progress * progress * (3 - 2 * progress);
+    const topSpacing = width < 600 ? 14 : 13;
+    const spacing = topSpacing - densityProgress * (topSpacing - 8);
     scrollVelocity += (scrollTarget - scrollVelocity) * 0.16;
     scrollTarget *= 0.82;
     pointerEnergy *= 0.975;
@@ -78,6 +80,14 @@ const SITE_JS = `
         const waveB = Math.cos(normalizedX * 5.5 - time * 1.7 - progress * 9) * 0.09;
         const ridgeA = Math.exp(-Math.pow((normalizedY - 0.35 - waveA) / 0.12, 2));
         const ridgeB = Math.exp(-Math.pow((normalizedY - 0.72 - waveB) / 0.15, 2));
+        const leftEdge = Math.exp(-(
+          Math.pow((normalizedX + 0.04) / 0.43, 2) +
+          Math.pow((normalizedY - 0.53 - waveA * 0.55) / 0.25, 2)
+        ) * 2.1);
+        const rightEdge = Math.exp(-(
+          Math.pow((normalizedX - 1.04) / 0.44, 2) +
+          Math.pow((normalizedY - 0.58 - waveB * 0.55) / 0.27, 2)
+        ) * 2.05);
         const interference = 0.5 + 0.5 * Math.sin(
           normalizedX * 17 + normalizedY * 12 + progress * 20 + time * 2
         );
@@ -86,12 +96,16 @@ const SITE_JS = `
         const distance = Math.hypot(normalizedX - pointerX, normalizedY - pointerY);
         const pointerField = Math.exp(-distance * 8.5) * pointerEnergy;
         const pointerRipple = 0.5 + 0.5 * Math.sin(distance * 54 - time * 8);
-        const field = Math.min(1, ridgeA * 0.72 + ridgeB * 0.62 + interference * 0.2);
+        const edgeField = Math.min(1, leftEdge + rightEdge);
+        const fullField = Math.min(1, ridgeA * 0.72 + ridgeB * 0.62 + interference * 0.22);
+        const field = edgeField * (1 - densityProgress) + fullField * densityProgress;
+        const baseAlpha = 0.004 + densityProgress * (0.052 + grain * 0.035);
         const alpha = Math.min(0.6,
-          0.06 + grain * 0.05 + field * (0.04 + grain * 0.2) +
+          baseAlpha + field * (0.018 + grain * (0.15 + densityProgress * 0.08)) +
           pointerField * pointerRipple * 0.32 + speed * field * 0.12
         );
-        const size = 0.65 + grain * 1.7 + speed * field * 0.9;
+        if (alpha < 0.012) continue;
+        const size = 0.6 + grain * (1.45 + densityProgress * 0.65) + speed * field * 0.9;
         const trail = speed * field * (3 + grain * 8);
         const shiftedY = y + scrollVelocity * (0.08 + field * 0.075);
 

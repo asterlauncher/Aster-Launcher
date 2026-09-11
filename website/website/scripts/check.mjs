@@ -31,6 +31,7 @@ try {
   assert.ok(home.includes("scrollbar-width:none"));
   const siteScript = await (await site.fetch(new Request("https://aster.test/site.js"))).text();
   assert.ok(siteScript.includes("scrollVelocity"));
+  assert.ok(siteScript.includes("densityProgress"));
   assert.ok(siteScript.includes('addEventListener("pointermove"'));
   assert.ok(home.includes("/aster-core-loop.mp4"));
   assert.ok(home.includes("more than one game"));
