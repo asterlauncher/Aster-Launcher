@@ -51,14 +51,10 @@ a{color:inherit}
   position:relative;isolation:isolate;min-height:100svh;display:grid;place-items:center;
   padding:40px 24px 72px;overflow:hidden;background:#030303
 }
-.ambient-video{
-  position:absolute;z-index:-4;inset:50% auto auto 50%;width:max(100vw,1080px);height:max(100vh,1000px);
-  object-fit:cover;transform:translate(-50%,-50%) scale(1.22);filter:grayscale(1) contrast(1.25) blur(1px);opacity:.31
-}
 .ambient-shade{
   position:absolute;z-index:-3;inset:0;background:
-    radial-gradient(circle at 50% 48%,rgba(0,0,0,.08) 0 18rem,rgba(0,0,0,.34) 42rem),
-    linear-gradient(rgba(0,0,0,.38),rgba(0,0,0,.61))
+    radial-gradient(circle at 50% 46%,rgba(255,255,255,.025),transparent 24rem),
+    linear-gradient(rgba(0,0,0,.08),rgba(0,0,0,.42))
 }
 .grid{
   position:absolute;z-index:-2;inset:0;opacity:.5;pointer-events:none;
@@ -105,7 +101,6 @@ h1{margin:0;max-width:340px;font-size:clamp(28px,7.7vw,38px);font-weight:480;let
 .retired div{width:min(470px,100%);padding:36px;border:1px solid var(--line)}
 .retired h1{margin:auto}.retired p{color:var(--muted)}
 .retired a{display:inline-flex;margin-top:16px}
-.reduced-motion .ambient-video{opacity:.2}
 @media(max-width:480px){
   .landing{padding:24px 16px 68px}
   .core-copy{padding:25px 22px 22px}
@@ -145,7 +140,6 @@ function home() {
     description: "Aster keeps your games, mods and profiles together in one simple launcher.",
     path: "/",
     content: `<main class="landing" id="content">
-      <video class="ambient-video" src="/aster-core-loop.mp4" autoplay muted loop playsinline aria-hidden="true"></video>
       <div class="ambient-shade" aria-hidden="true"></div>
       <div class="grid" aria-hidden="true"></div>
       <section class="core-card" aria-labelledby="hero-title">
