@@ -31,6 +31,13 @@ const SITE_JS = `
   const canvas = document.querySelector(".ambient-pixels");
   const context = canvas?.getContext("2d");
   let pixelFrame = 0;
+  let lastPixelPaint = 0;
+  let pointerX = 0.5;
+  let pointerY = 0.5;
+  let pointerEnergy = 0;
+  let lastScroll = window.scrollY;
+  let scrollVelocity = 0;
+  let scrollTarget = 0;
 
   const resizePixels = () => {
     if (!canvas || !context) return;
@@ -44,10 +51,21 @@ const SITE_JS = `
 
   const drawPixels = (timestamp = 0) => {
     if (!canvas || !context) return;
+    if (!mediaQuery.matches && timestamp - lastPixelPaint < 32) {
+      pixelFrame = window.requestAnimationFrame(drawPixels);
+      return;
+    }
+    lastPixelPaint = timestamp;
     const width = window.innerWidth;
     const height = window.innerHeight;
-    const spacing = width < 600 ? 13 : 11;
-    const time = timestamp * 0.00022;
+    const spacing = width < 600 ? 13 : 12;
+    const time = timestamp * 0.00025;
+    const scrollRange = Math.max(1, document.documentElement.scrollHeight - height);
+    const progress = window.scrollY / scrollRange;
+    scrollVelocity += (scrollTarget - scrollVelocity) * 0.16;
+    scrollTarget *= 0.82;
+    pointerEnergy *= 0.975;
+    const speed = Math.min(1, Math.abs(scrollVelocity) / 75);
 
     context.clearRect(0, 0, width, height);
     context.fillStyle = "#fff";
@@ -56,29 +74,29 @@ const SITE_JS = `
       const normalizedY = y / height;
       for (let x = spacing / 2; x < width; x += spacing) {
         const normalizedX = x / width;
-        const leftRidge = 0.53 + Math.sin(normalizedX * 8 + time * 2.2) * 0.085;
-        const rightRidge = 0.58 + Math.cos(normalizedX * 7 - time * 1.8) * 0.095;
-        const left = Math.exp(-(
-          Math.pow((normalizedX + 0.04) / 0.43, 2) +
-          Math.pow((normalizedY - leftRidge) / 0.24, 2)
-        ) * 2.1);
-        const right = Math.exp(-(
-          Math.pow((normalizedX - 1.04) / 0.44, 2) +
-          Math.pow((normalizedY - rightRidge) / 0.27, 2)
-        ) * 2.05);
-        const lower = Math.exp(-(
-          Math.pow((normalizedX - 0.5) / 0.72, 2) +
-          Math.pow((normalizedY - 1.08) / 0.28, 2)
-        ) * 2.4) * 0.32;
-        const grain = 0.5 + 0.5 * Math.sin(x * 0.041 + y * 0.027 + time * 5) *
-          Math.cos(x * 0.019 - y * 0.033 - time * 3.4);
-        const field = Math.min(1, left + right + lower);
-        const alpha = field * (0.025 + grain * 0.19);
+        const waveA = Math.sin(normalizedX * 9.5 + time * 2.3 + progress * 14) * 0.12;
+        const waveB = Math.cos(normalizedX * 5.5 - time * 1.7 - progress * 9) * 0.09;
+        const ridgeA = Math.exp(-Math.pow((normalizedY - 0.35 - waveA) / 0.12, 2));
+        const ridgeB = Math.exp(-Math.pow((normalizedY - 0.72 - waveB) / 0.15, 2));
+        const interference = 0.5 + 0.5 * Math.sin(
+          normalizedX * 17 + normalizedY * 12 + progress * 20 + time * 2
+        );
+        const grain = 0.5 + 0.5 * Math.sin(x * 0.043 + y * 0.029 + time * 5.4) *
+          Math.cos(x * 0.021 - y * 0.035 - time * 3.7);
+        const distance = Math.hypot(normalizedX - pointerX, normalizedY - pointerY);
+        const pointerField = Math.exp(-distance * 8.5) * pointerEnergy;
+        const pointerRipple = 0.5 + 0.5 * Math.sin(distance * 54 - time * 8);
+        const field = Math.min(1, ridgeA * 0.72 + ridgeB * 0.62 + interference * 0.2);
+        const alpha = Math.min(0.6,
+          0.06 + grain * 0.05 + field * (0.04 + grain * 0.2) +
+          pointerField * pointerRipple * 0.32 + speed * field * 0.12
+        );
+        const size = 0.65 + grain * 1.7 + speed * field * 0.9;
+        const trail = speed * field * (3 + grain * 8);
+        const shiftedY = y + scrollVelocity * (0.08 + field * 0.075);
 
-        if (alpha < 0.025) continue;
-        const size = 0.65 + grain * 1.65;
         context.globalAlpha = alpha;
-        context.fillRect(x - size / 2, y - size / 2, size, size);
+        context.fillRect(x - size / 2, shiftedY - size / 2, size, size + trail);
       }
     }
 
@@ -94,6 +112,17 @@ const SITE_JS = `
 
   restartPixels();
   window.addEventListener("resize", restartPixels, { passive: true });
+  window.addEventListener("scroll", () => {
+    const delta = window.scrollY - lastScroll;
+    lastScroll = window.scrollY;
+    scrollTarget = Math.max(-90, Math.min(90, scrollTarget + delta * 0.55));
+  }, { passive: true });
+  window.addEventListener("pointermove", (event) => {
+    pointerX = event.clientX / window.innerWidth;
+    pointerY = event.clientY / window.innerHeight;
+    pointerEnergy = 1;
+  }, { passive: true });
+  window.addEventListener("pointerleave", () => { pointerEnergy = 0; });
   mediaQuery.addEventListener?.("change", restartPixels);
 
   const revealItems = Array.from(document.querySelectorAll("[data-reveal]"));
