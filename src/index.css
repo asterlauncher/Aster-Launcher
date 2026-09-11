@@ -27,8 +27,8 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   --black: #0b0a0d;
-  --rail: #121214;
-  --titlebar: #0e0d10;
+  --rail: #09090b;
+  --titlebar: #09090b;
   --panel: #18171a;
   --panel-raised: #1d1c1f;
   --panel-soft: #151416;
@@ -130,6 +130,55 @@ button:disabled {
   height: 100%;
 }
 
+/* Website-style ambient pixel field. Kept behind the existing launcher UI so
+   this background can evolve independently without changing page layouts. */
+.launcher-shell {
+  position: relative;
+  isolation: isolate;
+  background: #09090b;
+}
+
+.launcher-shell::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+}
+
+.launcher-shell::before {
+  opacity: 0.5;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-position: center;
+  background-size: 96px 96px;
+  -webkit-mask-image: radial-gradient(circle at center, #000 15%, transparent 82%);
+  mask-image: radial-gradient(circle at center, #000 15%, transparent 82%);
+}
+
+.aster-ambient-pixels {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.launcher-main {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aster-ambient-pixels {
+    opacity: 0.72;
+  }
+}
+
+
 /* icon rail */
 
 .launcher-rail {
@@ -140,8 +189,23 @@ button:disabled {
   flex: 0 0 86px;
   flex-direction: column;
   align-items: center;
-  border-right: 1px solid #211f23;
-  background: var(--rail);
+  border-right: 1px solid #1d1d21;
+  background-color: var(--rail);
+  background-image:
+    linear-gradient(180deg, transparent 0%, rgba(9, 9, 11, 0.34) 54%, #09090b 100%),
+    linear-gradient(rgba(255, 255, 255, 0.026) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.026) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018), transparent 68%);
+  background-position:
+    center,
+    center,
+    center,
+    center;
+  background-size:
+    100% 100%,
+    32px 32px,
+    32px 32px,
+    100% 100%;
 }
 
 .rail-logo {
@@ -268,8 +332,23 @@ button:disabled {
   height: 54px;
   flex: 0 0 54px;
   align-items: center;
-  border-bottom: 1px solid #1b191d;
-  background: var(--titlebar);
+  border-bottom: 1px solid #1d1d21;
+  background-color: var(--titlebar);
+  background-image:
+    linear-gradient(90deg, #09090b 0%, rgba(9, 9, 11, 0.18) 36%, rgba(9, 9, 11, 0.18) 64%, #09090b 100%),
+    linear-gradient(rgba(255, 255, 255, 0.026) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.026) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 72%);
+  background-position:
+    center,
+    center,
+    center,
+    center;
+  background-size:
+    100% 100%,
+    32px 32px,
+    32px 32px,
+    100% 100%;
   padding-left: 20px;
   user-select: none;
 }
@@ -7362,30 +7441,88 @@ button:where(:not(.rail-logo):not(.rail-button):not(.window-control):not([role="
 }
 
 .rail-button {
-  border: 2px solid #08080a !important;
-  border-radius: 1px !important;
+  border: 1px solid #4c4552 !important;
+  border-radius: 3px !important;
+  color: #aaa2af !important;
   background:
-    linear-gradient(rgba(255, 255, 255, 0.055), transparent 45%),
-    #302d33 !important;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.085), transparent 46%),
+    linear-gradient(180deg, #403a45 0%, #2b2830 100%) !important;
   box-shadow:
-    inset 0 2px 0 rgba(255, 255, 255, 0.13),
-    inset 2px 0 0 rgba(255, 255, 255, 0.045),
-    inset -2px 0 0 rgba(0, 0, 0, 0.28),
-    inset 0 -3px 0 rgba(0, 0, 0, 0.45),
-    0 2px 0 #050506 !important;
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -3px 0 #1c1920,
+    0 3px 0 #050506,
+    0 5px 12px rgba(0, 0, 0, 0.24) !important;
+  transition:
+    color 140ms ease,
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease,
+    transform 110ms ease;
+}
+
+.rail-button:hover:not(.is-selected) {
+  border-color: #74677e !important;
+  color: #f2edf5 !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.11), transparent 48%),
+    linear-gradient(180deg, #51475a 0%, #342f3a 100%) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -3px 0 #221d28,
+    0 3px 0 #050506,
+    0 0 15px rgba(142, 91, 179, 0.15) !important;
+  transform: translateY(-1px);
+}
+
+.rail-button:active {
+  transform: translateY(1px);
 }
 
 .rail-button.is-selected {
-  border-color: #29183d !important;
-  color: #efe5ff !important;
-  background: #58337e !important;
+  border-color: #b67bd4 !important;
+  color: #fffaff !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 44%),
+    linear-gradient(180deg, #8e50b1 0%, #5b2e75 100%) !important;
   box-shadow:
-    inset 0 3px 0 #8157a8,
-    inset 3px 0 0 #6d4596,
-    inset -3px 0 0 #3a2252,
-    inset 0 -4px 0 #2c193f,
-    0 2px 0 #050506,
-    0 0 14px rgba(120, 64, 230, 0.25) !important;
+    inset 0 1px 0 #c38ce0,
+    inset 0 -3px 0 #3b1c4f,
+    0 3px 0 #160b1c,
+    0 0 18px rgba(162, 83, 207, 0.32) !important;
+}
+
+.rail-button.rail-settings {
+  border: 0 !important;
+  border-radius: 0 !important;
+  color: #aaa2af !important;
+  background: linear-gradient(145deg, #48404e, #302b35) !important;
+  clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  box-shadow:
+    inset 0 2px rgba(255, 255, 255, 0.12),
+    inset 0 -4px rgba(25, 13, 30, 0.55),
+    0 3px 0 #080609 !important;
+}
+
+.rail-button.rail-settings:hover:not(.is-selected) {
+  border: 0 !important;
+  color: #f2edf5 !important;
+  background: linear-gradient(145deg, #5a5062, #3a3440) !important;
+  box-shadow:
+    inset 0 2px rgba(255, 255, 255, 0.16),
+    inset 0 -4px rgba(25, 13, 30, 0.5),
+    0 3px 0 #080609,
+    0 0 14px rgba(142, 91, 179, 0.12) !important;
+}
+
+.rail-button.rail-settings.is-selected {
+  border: 0 !important;
+  color: #fff !important;
+  background: linear-gradient(145deg, #c475e0, #7b3e98) !important;
+  box-shadow:
+    inset 0 2px rgba(255, 255, 255, 0.2),
+    inset 0 -4px rgba(58, 22, 70, 0.55),
+    0 3px 0 #16091b,
+    0 0 18px rgba(177, 83, 213, 0.3) !important;
 }
 
 input,

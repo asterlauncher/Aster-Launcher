@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { AsterGiftInbox } from "./components/AsterGiftInbox";
+import { AsterPixelBackground } from "./components/AsterPixelBackground";
 import { CosmeticsReleaseGift } from "./components/CosmeticsReleaseGift";
 import { ModalSystem } from "./components/ModalSystem";
 import { ToastViewport } from "./components/Notifications";
@@ -70,6 +71,7 @@ export default function App() {
 
   return (
     <div className="launcher-shell">
+      <AsterPixelBackground />
       <Sidebar />
       <div className="launcher-main">
         <TopBar />
