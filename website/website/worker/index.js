@@ -1,127 +1,8 @@
 const REPOSITORY_URL =
   "https://github.com/asterlauncher/Aster-Launcher";
-const RELEASE_URL = `${REPOSITORY_URL}/releases`;
-const RELEASE_API_URL =
-  "https://api.github.com/repos/asterlauncher/Aster-Launcher/releases";
-const UPDATE_MANIFEST_URL = `${RELEASE_URL}/latest/download/aster-update.json`;
 const FONT_BASE64 = /*__FONT_DATA__*/ "";
 const ICON_BASE64 = /*__ICON_DATA__*/ "";
 const PREVIEW_BASE64 = /*__PREVIEW_DATA__*/ "";
-
-async function fetchReleaseData(suffix) {
-  try {
-    const response = await fetch(`${RELEASE_API_URL}${suffix}`, {
-      signal: AbortSignal.timeout(8000),
-      cache: "no-store",
-      headers: {
-        accept: "application/vnd.github+json",
-        "user-agent": "Aster-Launcher-Website",
-        "x-github-api-version": "2022-11-28",
-      },
-    });
-    if (!response.ok) return null;
-
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
-async function fetchUpdateManifest() {
-  try {
-    const response = await fetch(UPDATE_MANIFEST_URL, {
-      redirect: "follow",
-      signal: AbortSignal.timeout(8000),
-      cache: "no-store",
-      headers: { "user-agent": "Aster-Launcher-Website" },
-    });
-    if (!response.ok) return null;
-
-    return await response.json();
-  } catch {
-    return null;
-  }
-}
-
-function normalizeRelease(release) {
-  if (!release || release.draft !== false || release.prerelease !== false) return null;
-  const version = /^app-v(\d+\.\d+\.\d+)$/.exec(release.tag_name ?? "")?.[1];
-  if (!version) return null;
-  return {
-    version,
-    tag: release.tag_name,
-    title: String(release.name || `Aster Launcher ${version}`),
-    notes: String(release.body || "Release notes are available on GitHub."),
-    url: `${RELEASE_URL}/tag/${encodeURIComponent(release.tag_name)}`,
-    assets: Array.isArray(release.assets) ? release.assets : [],
-  };
-}
-
-function normalizeManifest(manifest) {
-  if (!manifest || typeof manifest.version !== "string") return null;
-  const version = /^\d+\.\d+\.\d+$/.test(manifest.version)
-    ? manifest.version
-    : null;
-  if (!version || typeof manifest.url !== "string") return null;
-
-  const tag = `app-v${version}`;
-  try {
-    const installerUrl = new URL(manifest.url);
-    const expectedPrefix = `/asterlauncher/Aster-Launcher/releases/download/${tag}/`;
-    if (
-      installerUrl.origin !== "https://github.com"
-      || installerUrl.username
-      || installerUrl.password
-      || !installerUrl.pathname.startsWith(expectedPrefix)
-    ) return null;
-
-    const filename = decodeURIComponent(installerUrl.pathname.split("/").at(-1) ?? "");
-    if (
-      !/[_-]x64-setup\.exe$/i.test(filename)
-      && !/[_-]x64(?:[_-][\w-]+)?\.msi$/i.test(filename)
-    ) return null;
-
-    return {
-      version,
-      tag,
-      title: String(manifest.name || `Aster Launcher ${version}`),
-      notes: String(manifest.description || "Release notes are available on GitHub."),
-      url: `${RELEASE_URL}/tag/${encodeURIComponent(tag)}`,
-      assets: [{ name: filename, browser_download_url: installerUrl.href }],
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function resolveLatestRelease() {
-  return normalizeManifest(await fetchUpdateManifest())
-    ?? normalizeRelease(await fetchReleaseData("/latest"));
-}
-
-function resolveInstaller(release) {
-  if (!release) return null;
-  const candidates = release.assets.flatMap((asset) => {
-    if (typeof asset?.name !== "string" || typeof asset.browser_download_url !== "string") return [];
-    try {
-      const url = new URL(asset.browser_download_url);
-      const expectedPrefix = `/asterlauncher/Aster-Launcher/releases/download/${release.tag}/`;
-      if (url.origin !== "https://github.com" || url.username || url.password || !url.pathname.startsWith(expectedPrefix)) return [];
-      return [{ name: asset.name, url: url.href }];
-    } catch {
-      return [];
-    }
-  });
-  return candidates.find((asset) => /[_-]x64-setup\.exe$/i.test(asset.name))
-    ?? candidates.find((asset) => /[_-]x64(?:[_-][\w-]+)?\.msi$/i.test(asset.name))
-    ?? null;
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[character]);
-}
 
 const SITE_JS = `
 (() => {
@@ -460,7 +341,6 @@ function shell({ title, description, path, content }) {
       </a>
       <div class="nav-links">
         <a class="${path === "/" ? "active" : ""}" href="/">LAUNCHER</a>
-        <a class="${path === "/changelog" ? "active" : ""}" href="/changelog">VERSIONS</a>
         <a class="${path === "/privacy" ? "active" : ""}" href="/privacy">PRIVACY</a>
       </div>
     </div>
@@ -484,23 +364,21 @@ function shell({ title, description, path, content }) {
 </html>`;
 }
 
-function home(release) {
-  const VERSION = release?.version ?? "LATEST";
+function home() {
   return shell({
-    title: "Download",
-    description: `Aster Launcher ${VERSION} für Windows herunterladen.`,
+    title: "Rebranding",
+    description: "Aster wird als moderner Launcher für Mods und mehrere Spiele neu entwickelt.",
     path: "/",
     content: `
       <header class="hero">
         <div class="wrap">
-          <span class="kicker">ASTER LAUNCHER · CLOSED ALPHA ${VERSION}</span>
-          <h1>YOUR MINECRAFT.<br>YOUR WAY.</h1>
-          <p>A fast desktop launcher for Minecraft Java, personal modpacks and community content. Clean, local and fully under your control.</p>
+          <span class="kicker">ASTER · REBRANDING IN PROGRESS</span>
+          <h1>ONE PLACE.<br>ALL YOUR MODS.</h1>
+          <p>Aster is being rebuilt as a simple launcher for your games, mods and profiles. The next public version will arrive with the new design.</p>
           <div class="hero-actions">
-            <a class="button green" href="/download">▶ START PLAYING</a>
-            <a class="button" href="#launcher">VIEW LAUNCHER</a>
+            <a class="button purple" href="#launcher">WHAT'S NEXT</a>
           </div>
-          <p class="tiny">WINDOWS 10/11 · X64 · FREE DOWNLOAD · MINECRAFT JAVA REQUIRED</p>
+          <p class="tiny">NO PUBLIC BUILD AVAILABLE DURING THE REBRAND</p>
         </div>
         <div class="launcher-stage">
           <div class="launcher-float">
@@ -516,23 +394,23 @@ function home(release) {
           <div class="section-heading">
             <span class="kicker">THE LAUNCHER</span>
             <h2 class="section-title">EVERYTHING YOU NEED.<br>NOTHING YOU DON'T.</h2>
-            <p class="section-copy">Aster keeps Minecraft instances, mods and updates together without turning your launcher into a social network or a store.</p>
+            <p class="section-copy">The new Aster will keep different games, profiles and mods organised in one clear desktop app.</p>
           </div>
           <div class="feature-strip">
             <article class="feature-item">
-              <span class="feature-number">01 · INSTANCES</span>
-              <h3>YOUR MODPACKS. ISOLATED.</h3>
-              <p>Create Vanilla, Fabric and Forge profiles with their own content, worlds and settings.</p>
+              <span class="feature-number">01 · GAMES</span>
+              <h3>MORE THAN ONE GAME.</h3>
+              <p>Each supported game gets its own space without turning Aster into a cluttered library.</p>
             </article>
             <article class="feature-item">
-              <span class="feature-number">02 · CONTENT</span>
-              <h3>INSTALL MODS IN SECONDS.</h3>
-              <p>Browse compatible Modrinth and CurseForge releases directly from the launcher.</p>
+              <span class="feature-number">02 · MODS</span>
+              <h3>MODS WITHOUT THE MESS.</h3>
+              <p>Install, organise and update content without digging through folders by hand.</p>
             </article>
             <article class="feature-item">
-              <span class="feature-number">03 · CONTROL</span>
-              <h3>LOCAL BY DEFAULT.</h3>
-              <p>Your instances stay on your device. No Aster website account and no unnecessary tracking.</p>
+              <span class="feature-number">03 · PROFILES</span>
+              <h3>EVERY SETUP STAYS SEPARATE.</h3>
+              <p>Your profiles, settings and files stay organised around the game they belong to.</p>
             </article>
           </div>
         </div>
@@ -540,21 +418,20 @@ function home(release) {
 
       <section class="links-section">
         <div class="wrap link-grid">
-          <a class="big-link" href="/changelog">
-            <span class="big-link-top"><span>01 · RELEASE HISTORY</span><span class="big-link-arrow">↗</span></span>
-            <span><h2>VERSIONS</h2><p>See what changed from the first prototype to ${VERSION}.</p></span>
-          </a>
           <a class="big-link" href="/privacy">
-            <span class="big-link-top"><span>02 · TRANSPARENCY</span><span class="big-link-arrow">↗</span></span>
+            <span class="big-link-top"><span>01 · TRANSPARENCY</span><span class="big-link-arrow">↗</span></span>
             <span><h2>DATA &amp; PRIVACY</h2><p>Clear details about local storage, login and external services.</p></span>
+          </a>
+          <a class="big-link" href="/legal">
+            <span class="big-link-top"><span>02 · PROJECT</span><span class="big-link-arrow">↗</span></span>
+            <span><h2>INDEPENDENT</h2><p>Aster is an independent launcher built around community-made content.</p></span>
           </a>
         </div>
       </section>
 
       <section class="cta">
-        <span class="kicker">READY TO PLAY?</span>
-        <h2>DOWNLOAD ASTER LAUNCHER FOR WINDOWS.</h2>
-        <a class="button green" href="/download">▶ DOWNLOAD ${VERSION}</a>
+        <span class="kicker">THE NEXT CHAPTER</span>
+        <h2>THE NEW ASTER IS IN DEVELOPMENT.</h2>
       </section>`,
   });
 }
@@ -574,34 +451,6 @@ function documentPage({ title, subtitle, path, body, action = "" }) {
   });
 }
 
-function changelog(latest, history) {
-  const releases = (Array.isArray(history) ? history : [])
-    .map(normalizeRelease)
-    .filter(Boolean);
-  const latestDetails = releases.find((release) => release.tag === latest?.tag);
-  const current = latest && latestDetails
-    ? { ...latest, title: latestDetails.title, notes: latestDetails.notes }
-    : latest;
-  const ordered = [
-    ...(current ? [current] : []),
-    ...releases.filter((release) => release.tag !== current?.tag),
-  ];
-  return documentPage({
-    title: current ? `VERSION ${current.version}` : "VERSIONS",
-    subtitle: "Published Aster Launcher releases and updates",
-    path: "/changelog",
-    action: `<a class="button green" href="/download">DOWNLOAD ${current?.version ?? "LATEST"}</a>`,
-    body: ordered.length ? ordered.map((release) => `
-      <section class="release">
-        <div class="release-label">${release.version}${release.tag === current?.tag ? "<small>CURRENT</small>" : ""}</div>
-        <div>
-          <h2>${escapeHtml(release.title)}</h2>
-          <p class="release-notes">${escapeHtml(release.notes)}</p>
-          <p><a href="${release.url}" rel="noreferrer">Release auf GitHub ansehen →</a></p>
-        </div>
-      </section>`).join("") : `<p>Release notes are temporarily unavailable. <a href="${RELEASE_URL}" rel="noreferrer">View releases on GitHub →</a></p>`,
-  });
-}
 function privacy() {
   return documentPage({
     title: "DATA & PRIVACY",
@@ -612,7 +461,7 @@ function privacy() {
       <p><strong>E-Mail:</strong> <a href="mailto:asterlauncher@gmail.com">asterlauncher@gmail.com</a></p>
       <h2>2. WEBSITE</h2>
       <p>Beim Aufruf verarbeitet die Hosting-Infrastruktur technisch notwendige Daten wie IP-Adresse, Zeitpunkt, angeforderte Adresse, Browserkennung und Betriebssystem. Das dient Auslieferung, Sicherheit und Fehleranalyse (Art. 6 Abs. 1 lit. f DSGVO).</p>
-      <p>Die Website besitzt keine Benutzerkonten, keine Werbung, kein Analytics und keine nicht notwendigen Cookies. Der Download wird über GitHub bereitgestellt; dabei gelten zusätzlich die <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" rel="noreferrer">Datenschutzhinweise von GitHub</a>.</p>
+      <p>Die Website besitzt keine Benutzerkonten, keine Werbung, kein Analytics und keine nicht notwendigen Cookies. Derzeit wird kein Launcher-Download angeboten.</p>
       <h2>3. DATEN IM LAUNCHER</h2>
       <h3>LOKALE DATEN</h3>
       <p>Instanzen, Einstellungen, installierte Inhalte, Downloadstatus, Benachrichtigungen, eigene Symbole, Welten und Screenshots werden grundsätzlich auf dem Gerät gespeichert. Es gibt derzeit keine Aster-Cloud-Synchronisierung.</p>
@@ -684,53 +533,15 @@ function pngResponse(base64) {
 export default {
   async fetch(request) {
     const { pathname } = new URL(request.url);
-    if (pathname === "/download") {
-      const installer = resolveInstaller(await resolveLatestRelease());
-      if (!installer) {
-        return new Response(
-          "The Aster Launcher installer is temporarily unavailable. Please try again shortly.",
-          {
-            status: 503,
-            headers: {
-              "content-type": "text/plain; charset=utf-8",
-              "cache-control": "no-store",
-              ...securityHeaders,
-            },
-          },
-        );
-      }
-
-      try {
-        const upstream = await fetch(installer.url, {
-          redirect: "follow",
-          headers: { "user-agent": "Aster-Launcher-Website" },
-        });
-        if (!upstream.ok || !upstream.body) throw new Error("Installer download failed");
-
-        const safeFilename = installer.name.replace(/["\r\n]/g, "");
-        const headers = new Headers({
-          "content-type":
-            upstream.headers.get("content-type") ?? "application/octet-stream",
-          "content-disposition": `attachment; filename="${safeFilename}"`,
-          "cache-control": "private, no-store",
+    if (pathname === "/download" || pathname === "/changelog") {
+      return new Response("No public Aster Launcher version is currently available.", {
+        status: 410,
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+          "cache-control": "no-store",
           ...securityHeaders,
-        });
-        const contentLength = upstream.headers.get("content-length");
-        if (contentLength) headers.set("content-length", contentLength);
-        return new Response(upstream.body, { status: 200, headers });
-      } catch {
-        return new Response(
-          "The Aster Launcher installer could not be downloaded. Please try again shortly.",
-          {
-            status: 502,
-            headers: {
-              "content-type": "text/plain; charset=utf-8",
-              "cache-control": "no-store",
-              ...securityHeaders,
-            },
-          },
-        );
-      }
+        },
+      });
     }
     if (pathname === "/minecraft.otf") return fontResponse();
     if (pathname === "/aster-icon.png") return pngResponse(ICON_BASE64);
@@ -745,20 +556,14 @@ export default {
       });
     }
 
-    const render = { "/": home, "/changelog": changelog, "/privacy": privacy, "/legal": legal }[pathname];
+    const render = { "/": home, "/privacy": privacy, "/legal": legal }[pathname];
     if (!render) {
       return new Response("Not found", {
         status: 404,
         headers: { "content-type": "text/plain; charset=utf-8", ...securityHeaders },
       });
     }
-    const release = pathname === "/" || pathname === "/changelog"
-      ? await resolveLatestRelease()
-      : null;
-    const history = pathname === "/changelog"
-      ? await fetchReleaseData("?per_page=100")
-      : null;
-    return new Response(render(release, history), {
+    return new Response(render(), {
       headers: {
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-cache, no-store, must-revalidate",

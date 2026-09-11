@@ -1,6 +1,6 @@
 # Aster Launcher website
 
-Cloudflare Worker for the Aster Launcher download site at **https://asterlauncher.com**.
+Cloudflare Worker for the Aster Launcher website at **https://asterlauncher.com**.
 
 ## Local development
 
@@ -14,11 +14,9 @@ npm run build
 
 The server prints its local URL. Edit `worker/index.js`; `scripts/build.mjs` bundles the existing font and images into `dist/server/index.js`. The old starter files under `app/` are not the active website entrypoint.
 
-## Releases
+## Public versions
 
-The homepage and `/download` read GitHub's current published release from `asterlauncher/Aster-Launcher/releases/latest`. The changelog reads published release notes. Drafts and GitHub prereleases are excluded. Publishing a new regular GitHub release with an x64 Windows installer updates the site's version and download without rebuilding the website.
-
-The current release must contain an `*_x64-setup.exe` or an x64 MSI from this repository. Missing installers and GitHub outages return a temporary download error rather than silently delivering an older version. Locally built versions are not public releases until their release and installer have been published on GitHub.
+There is no public launcher version during the rebrand. The website does not resolve GitHub releases, list version history or serve an installer. Both `/download` and `/changelog` return HTTP 410 until the newly branded launcher is ready.
 
 ## Cloudflare setup
 
