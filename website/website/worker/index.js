@@ -95,6 +95,20 @@ const SITE_JS = `
   restartPixels();
   window.addEventListener("resize", restartPixels, { passive: true });
   mediaQuery.addEventListener?.("change", restartPixels);
+
+  const revealItems = Array.from(document.querySelectorAll("[data-reveal]"));
+  if (mediaQuery.matches || !("IntersectionObserver" in window)) {
+    revealItems.forEach((item) => item.classList.add("is-visible"));
+  } else {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add("is-visible");
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: 0.14 });
+    revealItems.forEach((item) => observer.observe(item));
+  }
 })();
 `;
 
@@ -110,23 +124,25 @@ const styles = `
 }
 *{box-sizing:border-box}
 html,body{margin:0;min-width:300px;min-height:100%;background:var(--background);color:var(--text)}
-html{font-family:Inter,"Segoe UI",Helvetica,Arial,sans-serif;text-rendering:optimizeLegibility}
-body{min-height:100vh;overflow-x:hidden}
+html{font-family:Inter,"Segoe UI",Helvetica,Arial,sans-serif;text-rendering:optimizeLegibility;scroll-behavior:smooth;scrollbar-width:none}
+html::-webkit-scrollbar,body::-webkit-scrollbar{display:none}
+body{min-height:100vh;overflow-x:hidden;-ms-overflow-style:none}
 a{color:inherit}
 .skip-link{position:fixed;z-index:30;left:14px;top:14px;padding:10px 14px;background:#fff;color:#000;transform:translateY(-180%)}
 .skip-link:focus{transform:none}
+.home{position:relative;isolation:isolate;overflow:hidden;background:#030303}
 .landing{
-  position:relative;isolation:isolate;min-height:100svh;display:grid;place-items:center;
-  padding:40px 24px 72px;overflow:hidden;background:#030303
+  position:relative;z-index:1;min-height:100svh;display:grid;place-items:center;
+  padding:40px 24px 72px;overflow:hidden;background:transparent
 }
-.ambient-pixels{position:absolute;z-index:-4;inset:0;width:100%;height:100%;opacity:.92;pointer-events:none}
+.ambient-pixels{position:fixed;z-index:-4;inset:0;width:100%;height:100%;opacity:.92;pointer-events:none}
 .ambient-shade{
-  position:absolute;z-index:-3;inset:0;background:
+  position:fixed;z-index:-3;inset:0;background:
     radial-gradient(circle at 50% 46%,rgba(255,255,255,.025),transparent 24rem),
     linear-gradient(rgba(0,0,0,.08),rgba(0,0,0,.42))
 }
 .grid{
-  position:absolute;z-index:-2;inset:0;opacity:.5;pointer-events:none;
+  position:fixed;z-index:-2;inset:0;opacity:.5;pointer-events:none;
   background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px);
   background-size:96px 96px;background-position:center center;
   -webkit-mask-image:radial-gradient(circle at center,#000 15%,transparent 82%);mask-image:radial-gradient(circle at center,#000 15%,transparent 82%)
@@ -149,8 +165,42 @@ h1{margin:0;max-width:340px;font-size:clamp(28px,7.7vw,38px);font-weight:480;let
 .action-primary{border-color:#fff;background:#f4f4f4;color:#080808;cursor:default}
 .action-primary:hover{border-color:#fff;background:#f4f4f4;color:#080808}
 .arrow{font-size:17px;line-height:0;transform:translateY(-1px)}
-.site-footer{position:absolute;bottom:22px;left:0;right:0;display:flex;justify-content:center;gap:16px;color:#777;font-size:11px}
+.scroll-cue{
+  position:absolute;bottom:22px;left:50%;display:flex;align-items:center;gap:9px;color:#777;
+  font-size:10px;letter-spacing:.12em;text-decoration:none;text-transform:uppercase;transform:translateX(-50%)
+}
+.scroll-cue span{color:#bbb;font-size:15px;animation:scrollPulse 1.8s ease-in-out infinite}
+.content-section{position:relative;z-index:1;min-height:100svh;display:grid;place-items:center;padding:90px 24px}
+.section-card{width:min(900px,100%);border:1px solid var(--line);background:rgba(4,4,4,.94);box-shadow:0 34px 90px rgba(0,0,0,.48)}
+.section-head{display:grid;grid-template-columns:90px 1fr 1fr;gap:32px;padding:42px;border-bottom:1px solid var(--line)}
+.section-number{margin:5px 0 0;color:#737373;font-size:10px;font-weight:650;letter-spacing:.16em}
+.section-head h2,.closing-card h2{margin:0;font-size:clamp(32px,5vw,54px);font-weight:480;letter-spacing:-.04em;line-height:1.02}
+.section-head p{margin:3px 0 0;color:var(--muted);font-size:14px;line-height:1.65}
+.feature-list{display:grid;grid-template-columns:repeat(3,1fr)}
+.feature{min-height:215px;padding:31px;border-right:1px solid var(--line)}
+.feature:last-child{border-right:0}
+.feature-index{display:block;margin-bottom:62px;color:#6f6f6f;font-size:10px;letter-spacing:.14em}
+.feature h3{margin:0 0 11px;font-size:18px;font-weight:520}
+.feature p{margin:0;color:#888;font-size:13px;line-height:1.6}
+.workflow-card{display:grid;grid-template-columns:1fr 1fr}
+.workflow-copy{padding:48px;border-right:1px solid var(--line)}
+.workflow-copy h2{margin:0;font-size:clamp(34px,5vw,56px);font-weight:480;letter-spacing:-.04em;line-height:1.02}
+.workflow-copy p{margin:24px 0 0;color:var(--muted);font-size:14px;line-height:1.65}
+.workflow-list{display:grid}
+.workflow-item{display:grid;grid-template-columns:40px 1fr;gap:18px;padding:30px;border-bottom:1px solid var(--line)}
+.workflow-item:last-child{border-bottom:0}
+.workflow-item>span{color:#747474;font-size:10px;letter-spacing:.12em}
+.workflow-item h3{margin:0 0 7px;font-size:16px;font-weight:520}
+.workflow-item p{margin:0;color:#858585;font-size:13px;line-height:1.55}
+.closing-section{min-height:88svh}
+.closing-card{width:min(425px,calc(100vw - 32px));padding:38px 28px 29px;border:1px solid var(--line);background:rgba(4,4,4,.95);text-align:left}
+.closing-card p:not(.brand-label){margin:20px 0 30px;color:var(--muted);font-size:14px;line-height:1.6}
+.closing-actions{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.site-footer{position:relative;z-index:1;display:flex;justify-content:center;gap:16px;padding:0 20px 28px;color:#777;font-size:11px}
 .site-footer a{text-decoration:none}.site-footer a:hover,.site-footer a:focus-visible{color:#fff}
+[data-reveal]{opacity:0;transform:translateY(34px);transition:opacity .75s ease,transform .75s cubic-bezier(.2,.8,.2,1)}
+[data-reveal].is-visible{opacity:1;transform:none}
+@keyframes scrollPulse{0%,100%{transform:translateY(-2px);opacity:.55}50%{transform:translateY(3px);opacity:1}}
 .document-page{
   min-height:100svh;padding:70px 22px;background:
     linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),
@@ -175,10 +225,18 @@ h1{margin:0;max-width:340px;font-size:clamp(28px,7.7vw,38px);font-weight:480;let
   .core-copy{padding:25px 22px 22px}
   .intro{font-size:13px;margin-bottom:24px}
   .actions{grid-template-columns:1fr 1fr}.action-primary{grid-column:1/-1;grid-row:2}
+  .content-section{padding:70px 16px}
+  .section-head{grid-template-columns:1fr;gap:18px;padding:28px 22px}
+  .feature-list{grid-template-columns:1fr}
+  .feature{min-height:auto;padding:25px 22px;border-right:0;border-bottom:1px solid var(--line)}
+  .feature:last-child{border-bottom:0}.feature-index{margin-bottom:25px}
+  .workflow-card{grid-template-columns:1fr}.workflow-copy{padding:31px 22px;border-right:0;border-bottom:1px solid var(--line)}
+  .workflow-item{padding:25px 22px}
   .document-head,.document-content{padding-left:23px;padding-right:23px}
 }
 @media(prefers-reduced-motion:reduce){
   *,*::before,*::after{scroll-behavior:auto!important;transition:none!important}
+  [data-reveal]{opacity:1;transform:none}.scroll-cue span{animation:none}
 }
 `;
 
@@ -208,26 +266,64 @@ function home() {
     title: "Aster — One place for your mods",
     description: "Aster keeps your games, mods and profiles together in one simple launcher.",
     path: "/",
-    content: `<main class="landing" id="content">
+    content: `<main class="home" id="content">
       <canvas class="ambient-pixels" aria-hidden="true"></canvas>
       <div class="ambient-shade" aria-hidden="true"></div>
       <div class="grid" aria-hidden="true"></div>
-      <section class="core-card" aria-labelledby="hero-title">
-        <div class="core-visual">
-          <video src="/aster-core-loop.mp4" autoplay muted loop playsinline aria-hidden="true"></video>
-        </div>
-        <div class="core-copy">
-          <p class="brand-label">ASTER LAUNCHER</p>
-          <h1 id="hero-title">All your mods.<br>One launcher.</h1>
-          <p class="intro">Aster keeps your games, mods and profiles in one place. Simple to set up, easy to manage, and built for more than one game.</p>
-          <div class="actions">
-            <a class="action" href="/privacy"><span class="arrow" aria-hidden="true">‹</span> Privacy</a>
-            <a class="action" href="${REPOSITORY_URL}" rel="noreferrer">GitHub</a>
-            <span class="action action-primary" aria-disabled="true">In development</span>
+      <section class="landing" aria-label="Introduction">
+        <section class="core-card" aria-labelledby="hero-title">
+          <div class="core-visual">
+            <video src="/aster-core-loop.mp4" autoplay muted loop playsinline aria-hidden="true"></video>
+          </div>
+          <div class="core-copy">
+            <p class="brand-label">ASTER LAUNCHER</p>
+            <h1 id="hero-title">All your mods.<br>One launcher.</h1>
+            <p class="intro">Aster keeps your games, mods and profiles in one place. Simple to set up, easy to manage, and built for more than one game.</p>
+            <div class="actions">
+              <a class="action" href="/privacy"><span class="arrow" aria-hidden="true">‹</span> Privacy</a>
+              <a class="action" href="${REPOSITORY_URL}" rel="noreferrer">GitHub</a>
+              <span class="action action-primary" aria-disabled="true">In development</span>
+            </div>
+          </div>
+        </section>
+        <a class="scroll-cue" href="#library">Scroll to explore <span aria-hidden="true">↓</span></a>
+      </section>
+
+      <section class="content-section" id="library">
+        <div class="section-card" data-reveal>
+          <header class="section-head">
+            <p class="section-number">01 / LIBRARY</p>
+            <h2>Everything<br>together.</h2>
+            <p>Aster gives every supported game its own space. Your mods, profiles and settings stay where they belong, so switching setups stays simple.</p>
+          </header>
+          <div class="feature-list">
+            <article class="feature"><span class="feature-index">01 / GAMES</span><h3>One clear library.</h3><p>Find every supported game and setup from a single place.</p></article>
+            <article class="feature"><span class="feature-index">02 / MODS</span><h3>Mods without the mess.</h3><p>Install and manage content without sorting folders by hand.</p></article>
+            <article class="feature"><span class="feature-index">03 / PROFILES</span><h3>Every setup stays separate.</h3><p>Keep different mod collections and settings ready to launch.</p></article>
           </div>
         </div>
       </section>
-      <footer class="site-footer"><span>© 2026 Aster</span><a href="/legal">Legal</a></footer>
+
+      <section class="content-section">
+        <div class="section-card workflow-card" data-reveal>
+          <div class="workflow-copy"><p class="brand-label">02 / YOUR SETUP</p><h2>Built around<br>the way you play.</h2><p>Aster keeps the routine short. Choose a game, shape a profile and get back to playing.</p></div>
+          <div class="workflow-list">
+            <article class="workflow-item"><span>01</span><div><h3>Start clean.</h3><p>Create a fresh profile for any supported game.</p></div></article>
+            <article class="workflow-item"><span>02</span><div><h3>Change freely.</h3><p>Add, remove and organise mods as your setup grows.</p></div></article>
+            <article class="workflow-item"><span>03</span><div><h3>Stay in control.</h3><p>See what belongs to each profile before you launch.</p></div></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="content-section closing-section">
+        <div class="closing-card" data-reveal>
+          <p class="brand-label">ASTER / IN DEVELOPMENT</p>
+          <h2>Aster is<br>taking shape.</h2>
+          <p>The redesigned launcher is in development. The first public build will arrive when it is ready.</p>
+          <div class="closing-actions"><a class="action" href="#content">Back to top</a><a class="action action-primary" href="${REPOSITORY_URL}" rel="noreferrer">Follow on GitHub</a></div>
+        </div>
+      </section>
+      <footer class="site-footer"><span>© 2026 Aster</span><a href="/privacy">Privacy</a><a href="/legal">Legal</a></footer>
     </main>`,
   });
 }
