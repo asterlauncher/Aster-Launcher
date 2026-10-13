@@ -23,11 +23,15 @@ try {
   }
 
   const home = await (await site.fetch(new Request("https://aster.test/"))).text();
-  assert.ok(home.includes("In development"));
+  assert.ok(home.includes("Download for Windows"));
+  assert.ok(home.includes("VERSION 0.8.0 · WINDOWS 64-BIT"));
+  assert.ok(home.includes('href="/downloads/Aster-Launcher-0.8.0-Windows-x64-Setup.exe"'));
+  assert.ok(!home.includes("In development"));
+  assert.ok(!home.includes("no download yet"));
   assert.ok(home.includes("ambient-pixels"));
   assert.ok(home.includes("Scroll to explore"));
   assert.ok(home.includes("Pick a game.<br>Add your mods."));
-  assert.ok(home.includes("Still in<br>the works."));
+  assert.ok(home.includes("Ready when<br>you are."));
   assert.ok(!home.includes("Built around"));
   assert.ok(!home.includes("taking shape"));
   assert.ok(home.includes("scrollbar-width:none"));
@@ -40,15 +44,15 @@ try {
   assert.ok(!home.includes("DOWNLOAD 0.7.9"));
   assert.ok(!home.includes("Minecraft.otf"));
   assert.ok(!home.includes("launcher-preview.png"));
-  assert.ok(!home.includes('href="/download"'));
   assert.ok(!home.includes('href="/changelog"'));
 
-  for (const path of ["/download", "/changelog"]) {
-    const response = await site.fetch(new Request(`https://aster.test${path}`));
-    assert.equal(response.status, 410, path);
-    assert.match(await response.text(), /Nothing to download yet/);
-    assert.match(response.headers.get("cache-control"), /no-store/);
-  }
+  const download = await site.fetch(new Request("https://aster.test/download"));
+  assert.equal(download.status, 302);
+  assert.equal(
+    download.headers.get("location"),
+    "https://aster.test/downloads/Aster-Launcher-0.8.0-Windows-x64-Setup.exe",
+  );
+  assert.equal((await site.fetch(new Request("https://aster.test/changelog"))).status, 404);
 
   assert.equal((await site.fetch(new Request("https://aster.test/not-found"))).status, 404);
   assert.equal(externalRequests, 0, "The rebranding website must not resolve GitHub releases");
@@ -56,4 +60,4 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log("Redesigned website routes and retired launcher downloads passed.");
+console.log("Website routes and Aster 0.8.0 download passed.");

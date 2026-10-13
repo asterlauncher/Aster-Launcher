@@ -6,6 +6,7 @@ import site from "../worker/index.js";
 const port = Number.parseInt(process.env.PORT ?? "4173", 10);
 const iconPath = resolve(import.meta.dirname, "..", "assets", "aster-icon.png");
 const videoPath = resolve(import.meta.dirname, "..", "assets", "aster-core-loop.mp4");
+const installerPath = resolve(import.meta.dirname, "..", "assets", "Aster-Launcher-0.8.0-Windows-x64-Setup.exe");
 
 async function sendFile(incoming, outgoing, path, contentType) {
   const file = await readFile(path);
@@ -48,6 +49,11 @@ const server = createServer(async (incoming, outgoing) => {
     }
     if (requestUrl.pathname === "/aster-core-loop.mp4") {
       await sendFile(incoming, outgoing, videoPath, "video/mp4");
+      return;
+    }
+    if (requestUrl.pathname === "/downloads/Aster-Launcher-0.8.0-Windows-x64-Setup.exe") {
+      outgoing.setHeader("content-disposition", 'attachment; filename="Aster-Launcher-0.8.0-Windows-x64-Setup.exe"');
+      await sendFile(incoming, outgoing, installerPath, "application/vnd.microsoft.portable-executable");
       return;
     }
     const response = await site.fetch(request);

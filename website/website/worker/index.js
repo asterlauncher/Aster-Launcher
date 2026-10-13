@@ -1,4 +1,6 @@
 const REPOSITORY_URL = "https://github.com/asterlauncher/Aster-Launcher";
+const DOWNLOAD_URL = "/downloads/Aster-Launcher-0.8.0-Windows-x64-Setup.exe";
+const CURRENT_VERSION = "0.8.0";
 
 const securityHeaders = {
   "content-security-policy":
@@ -198,15 +200,16 @@ a{color:inherit}
 .brand-label{margin:0 0 18px;color:#a8a8a8;font-size:10px;font-weight:650;letter-spacing:.19em}
 h1{margin:0;max-width:340px;font-size:clamp(28px,7.7vw,38px);font-weight:480;letter-spacing:-.035em;line-height:1.06}
 .intro{margin:17px 0 30px;max-width:355px;color:var(--muted);font-size:14px;line-height:1.55}
-.actions{display:grid;grid-template-columns:1fr auto auto;gap:9px;align-items:center}
+.actions{display:grid;grid-template-columns:auto 1fr;gap:9px;align-items:center}
 .action{
   min-height:38px;display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:0 13px;
   border:1px solid rgba(255,255,255,.27);background:#0d0d0d;color:#cecece;text-decoration:none;
   font:500 12px/1 Inter,"Segoe UI",sans-serif;white-space:nowrap;transition:background .16s,color .16s,border-color .16s
 }
 .action:hover,.action:focus-visible{background:#191919;border-color:#777;color:#fff;outline:none}
-.action-primary{border-color:#fff;background:#f4f4f4;color:#080808;cursor:default}
+.action-primary{border-color:#fff;background:#f4f4f4;color:#080808}
 .action-primary:hover{border-color:#fff;background:#f4f4f4;color:#080808}
+.release-meta{margin:13px 0 0;color:#6f6f6f;font-size:10px;letter-spacing:.08em;text-align:right}
 .arrow{font-size:17px;line-height:0;transform:translateY(-1px)}
 .scroll-cue{
   position:absolute;bottom:22px;left:50%;display:flex;align-items:center;gap:9px;color:#777;
@@ -249,15 +252,11 @@ h1{margin:0;max-width:340px;font-size:clamp(28px,7.7vw,38px);font-weight:480;let
 .document-content h2{margin:31px 0 9px;color:#eee;font-size:13px;font-weight:650;letter-spacing:.08em;text-transform:uppercase}
 .document-content p,.document-content li{color:#aaa;font-size:14px;line-height:1.7}
 .document-content ul{padding-left:20px}.document-content a{color:#fff}
-.retired{min-height:100svh;display:grid;place-items:center;padding:28px;background:#030303;text-align:center}
-.retired div{width:min(470px,100%);padding:36px;border:1px solid var(--line)}
-.retired h1{margin:auto}.retired p{color:var(--muted)}
-.retired a{display:inline-flex;margin-top:16px}
 @media(max-width:480px){
   .landing{padding:24px 16px 68px}
   .core-copy{padding:25px 22px 22px}
   .intro{font-size:13px;margin-bottom:24px}
-  .actions{grid-template-columns:1fr 1fr}.action-primary{grid-column:1/-1;grid-row:2}
+  .actions{grid-template-columns:1fr 1fr}
   .content-section{padding:70px 16px}
   .section-head{grid-template-columns:1fr;gap:18px;padding:28px 22px}
   .feature-list{grid-template-columns:1fr}
@@ -311,10 +310,10 @@ function home() {
             <h1 id="hero-title">Your mods.<br>One launcher.</h1>
             <p class="intro">Manage your games, mods and profiles in one place.</p>
             <div class="actions">
-              <a class="action" href="/privacy"><span class="arrow" aria-hidden="true">‹</span> Privacy</a>
               <a class="action" href="${REPOSITORY_URL}" rel="noreferrer">GitHub</a>
-              <span class="action action-primary" aria-disabled="true">In development</span>
+              <a class="action action-primary" href="${DOWNLOAD_URL}" download>Download for Windows</a>
             </div>
+            <p class="release-meta">VERSION ${CURRENT_VERSION} · WINDOWS 64-BIT</p>
           </div>
         </section>
         <a class="scroll-cue" href="#library">Scroll to explore <span aria-hidden="true">↓</span></a>
@@ -337,10 +336,10 @@ function home() {
 
       <section class="content-section closing-section">
         <div class="closing-card" data-reveal>
-          <p class="brand-label">ASTER / IN DEVELOPMENT</p>
-          <h2>Still in<br>the works.</h2>
-          <p>We're working on the new launcher. There's no download yet.</p>
-          <div class="closing-actions"><a class="action" href="#content">Back to top</a><a class="action action-primary" href="${REPOSITORY_URL}" rel="noreferrer">Follow on GitHub</a></div>
+          <p class="brand-label">ASTER / VERSION ${CURRENT_VERSION}</p>
+          <h2>Ready when<br>you are.</h2>
+          <p>Download Aster for Windows and start building your setup.</p>
+          <div class="closing-actions"><a class="action" href="#content">Back to top</a><a class="action action-primary" href="${DOWNLOAD_URL}" download>Download Aster</a></div>
         </div>
       </section>
       <footer class="site-footer"><span>© 2026 Aster</span><a href="/privacy">Privacy</a><a href="/legal">Legal</a></footer>
@@ -390,17 +389,8 @@ function legal() {
       <p>Aster Launcher is an independent launcher for games and community-made mods. It is not affiliated with or endorsed by the publishers of supported games.</p>
       <h2>Third-party content</h2>
       <p>Games, mods and other community content remain the property of their respective owners. Their licenses and terms apply.</p>
-      <h2>Development status</h2>
-      <p>The redesigned Aster Launcher is in development. There is currently no public build or installer.</p>`,
-  });
-}
-
-function retiredPage() {
-  return shell({
-    title: "Aster — In development",
-    description: "The redesigned Aster Launcher is in development.",
-    path: "/",
-    content: `<main class="retired" id="content"><div><p class="brand-label">ASTER LAUNCHER</p><h1>Nothing to download yet.</h1><p>The new Aster is in development. Public builds will return when the redesigned launcher is ready.</p><a class="action" href="/">Back to Aster</a></div></main>`,
+      <h2>Current release</h2>
+      <p>Aster Launcher ${CURRENT_VERSION} is available as a public Windows build.</p>`,
   });
 }
 
@@ -418,15 +408,8 @@ export default {
       });
     }
 
-    if (pathname === "/download" || pathname === "/changelog") {
-      return new Response(retiredPage(), {
-        status: 410,
-        headers: {
-          "content-type": "text/html; charset=utf-8",
-          "cache-control": "no-store",
-          ...securityHeaders,
-        },
-      });
+    if (pathname === "/download") {
+      return Response.redirect(new URL(DOWNLOAD_URL, request.url), 302);
     }
 
     const render = { "/": home, "/privacy": privacy, "/legal": legal }[pathname];

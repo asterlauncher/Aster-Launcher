@@ -16,9 +16,9 @@ The server prints its local URL. Edit `worker/index.js`; `scripts/build.mjs` cop
 
 The homepage is a single-screen, monochrome introduction to Aster as a launcher for multiple games and their mods. `assets/aster-core-loop.mp4` is the user-owned motion reference used for its animated background and central visual.
 
-## Public versions
+## Public release
 
-There is no public launcher version during the rebrand. The website does not resolve GitHub releases, list version history or serve an installer. Both `/download` and `/changelog` return HTTP 410 until the newly branded launcher is ready.
+The website serves Aster Launcher 0.8.0 for Windows from `/downloads/Aster-Launcher-0.8.0-Windows-x64-Setup.exe`. The short `/download` route redirects to the current installer. Update the asset, version constants, tests and build copy step together for a new release.
 
 ## Cloudflare setup
 
