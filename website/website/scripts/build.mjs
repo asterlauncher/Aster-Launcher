@@ -14,8 +14,8 @@ await cp(resolve(root, "worker", "index.js"), resolve(dist, "server", "index.js"
 await cp(resolve(root, "assets", "aster-icon.png"), resolve(dist, "public", "aster-icon.png"));
 await cp(resolve(root, "assets", "aster-core-loop.mp4"), resolve(dist, "public", "aster-core-loop.mp4"));
 await cp(
-  resolve(root, "assets", "Aster-Launcher-0.8.0-Windows-x64-Setup.exe"),
-  resolve(dist, "public", "downloads", "Aster-Launcher-0.8.0-Windows-x64-Setup.exe"),
+  resolve(root, "assets", "Aster-Launcher-0.8.1-Windows-x64-Setup.exe"),
+  resolve(dist, "public", "downloads", "Aster-Launcher-0.8.1-Windows-x64-Setup.exe"),
 );
 await cp(
   resolve(root, ".openai", "hosting.json"),

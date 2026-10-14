@@ -1,6 +1,6 @@
 const REPOSITORY_URL = "https://github.com/asterlauncher/Aster-Launcher";
-const DOWNLOAD_URL = "/downloads/Aster-Launcher-0.8.0-Windows-x64-Setup.exe";
-const CURRENT_VERSION = "0.8.0";
+const DOWNLOAD_URL = "/downloads/Aster-Launcher-0.8.1-Windows-x64-Setup.exe";
+const CURRENT_VERSION = "0.8.1";
 
 const securityHeaders = {
   "content-security-policy":

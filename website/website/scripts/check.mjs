@@ -24,8 +24,8 @@ try {
 
   const home = await (await site.fetch(new Request("https://aster.test/"))).text();
   assert.ok(home.includes("Download for Windows"));
-  assert.ok(home.includes("VERSION 0.8.0 · WINDOWS 64-BIT"));
-  assert.ok(home.includes('href="/downloads/Aster-Launcher-0.8.0-Windows-x64-Setup.exe"'));
+  assert.ok(home.includes("VERSION 0.8.1 · WINDOWS 64-BIT"));
+  assert.ok(home.includes('href="/downloads/Aster-Launcher-0.8.1-Windows-x64-Setup.exe"'));
   assert.ok(!home.includes("In development"));
   assert.ok(!home.includes("no download yet"));
   assert.ok(home.includes("ambient-pixels"));
@@ -50,7 +50,7 @@ try {
   assert.equal(download.status, 302);
   assert.equal(
     download.headers.get("location"),
-    "https://aster.test/downloads/Aster-Launcher-0.8.0-Windows-x64-Setup.exe",
+    "https://aster.test/downloads/Aster-Launcher-0.8.1-Windows-x64-Setup.exe",
   );
   assert.equal((await site.fetch(new Request("https://aster.test/changelog"))).status, 404);
 
@@ -60,4 +60,4 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log("Website routes and Aster 0.8.0 download passed.");
+console.log("Website routes and Aster 0.8.1 download passed.");

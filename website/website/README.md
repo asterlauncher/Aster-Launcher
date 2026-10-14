@@ -18,7 +18,7 @@ The homepage is a single-screen, monochrome introduction to Aster as a launcher 
 
 ## Public release
 
-The website serves Aster Launcher 0.8.0 for Windows from `/downloads/Aster-Launcher-0.8.0-Windows-x64-Setup.exe`. The short `/download` route redirects to the current installer. Update the asset, version constants, tests and build copy step together for a new release.
+The website serves Aster Launcher 0.8.1 for Windows from `/downloads/Aster-Launcher-0.8.1-Windows-x64-Setup.exe`. The short `/download` route redirects to the current installer. Update the asset, version constants, tests and build copy step together for a new release.
 
 ## Cloudflare setup
 
